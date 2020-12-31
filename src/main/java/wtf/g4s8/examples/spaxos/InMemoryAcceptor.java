@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Acceptor implementation which stores values in memory.
  * See more details in {@link Acceptor} docs.
+ *
  * @since 1.0
  */
 public final class InMemoryAcceptor<T> implements Acceptor<T> {
@@ -56,19 +57,23 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     }
 
     @Override
-    public synchronized Acceptor.Promise<T> prepare(final Proposal prop) {
-        if (prop.compareTo(this.min) > 0) {
-            this.min = prop;
+    public synchronized void prepare(final Proposal prop, final PrepareCallback<T> callback) {
+        if (this.min.compareTo(prop) > 0) {
+            return;
         }
-        return new Acceptor.Promise<>(this.acc, mem.get());
+        if (this.acc.compareTo(Proposal.ZERO) > 0) {
+            callback.promise(this.acc, mem.get());
+        } else {
+            callback.promise(prop);
+        }
     }
 
     @Override
-    public synchronized Proposal accept(final Proposal prop, final T value) {
+    public synchronized void accept(final Proposal prop, final T value, final AcceptCallback<T> callback) {
         if (prop.compareTo(this.min) >= 0) {
             this.acc = this.min = prop;
             this.mem.set(value);
+            callback.accepted(prop, value);
         }
-        return this.min;
     }
 }

@@ -24,12 +24,14 @@
 
 package wtf.g4s8.examples;
 
+import wtf.g4s8.examples.spaxos.*;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,10 +41,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import wtf.g4s8.examples.spaxos.*;
-
 /**
- *
  * @since 1.0
  */
 public final class Main {
@@ -52,12 +51,16 @@ public final class Main {
         final int nAcc = Integer.parseInt(args[1]);
 
         List<AtomicReference<String>> memory = Stream.generate(() -> new AtomicReference<>(""))
-            .limit(nAcc).collect(Collectors.toList());
+                .limit(nAcc).collect(Collectors.toList());
+        final ExecutorService accexec = Executors.newCachedThreadPool();
         List<Acceptor<String>> acceptors = memory.stream()
-            .map(InMemoryAcceptor::new).map(AcceptorDelaySimulator::new)
-            .collect(Collectors.toList());
+                .map(InMemoryAcceptor::new)
+                .map(a -> new DropAcceptor<>(0.3, a))
+                .map(a -> new TimeoutAcceptor<>(200, a))
+                .map(a -> new AsyncAcceptor<>(accexec, a))
+                .collect(Collectors.toList());
         List<Proposer<String>> proposers = Stream.generate(new ProposerGen<>(acceptors))
-            .limit(nProp).collect(Collectors.toList());
+                .limit(nProp).collect(Collectors.toList());
 
         CountDownLatch cd = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(nProp);
@@ -72,16 +75,23 @@ public final class Main {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                proposers.get(val).propose(Integer.toString(val));
+                try {
+                    final String res = proposers.get(val).propose(Integer.toString(val)).get();
+                    System.out.printf("proposed %d get %s\n", val, res);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
                 done.countDown();
             });
         }
         cd.countDown();
         done.await();
         exec.shutdown();
+        accexec.shutdown();
+        Proposer.EXEC_TIMEOUT.shutdown();
 
         Map<String, Long> res = memory.stream().map(AtomicReference::get)
-            .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         List<Map.Entry<String, Long>> entries = new ArrayList<>(res.entrySet());
         entries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
         System.out.println("Results:");
@@ -99,37 +109,7 @@ public final class Main {
         }
 
         public Proposer<T> get() {
-            return new Proposer<>(this.server.incrementAndGet(),this.acceptors);
-        }
-    }
-
-    private static final class AcceptorDelaySimulator<T> implements Acceptor<T> {
-
-        private static final Random RND = new Random();
-
-        private final Acceptor<T> origin;
-
-        public AcceptorDelaySimulator(final Acceptor<T> origin) {
-            this.origin = origin;
-        }
-
-        public Acceptor.Promise<T> prepare(Proposal prop) {
-            delay();
-            return this.origin.prepare(prop);
-        }
-
-        public Proposal accept(Proposal prop, T value) {
-            delay();
-            return this.origin.accept(prop, value);
-        }
-
-        private static void delay() {
-            try {
-                Thread.sleep(RND.nextInt(15));
-            } catch (InterruptedException iex) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+            return new Proposer<>(this.server.incrementAndGet(), this.acceptors);
         }
     }
 }

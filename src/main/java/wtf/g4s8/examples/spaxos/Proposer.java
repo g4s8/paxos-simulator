@@ -24,11 +24,11 @@
 
 package wtf.g4s8.examples.spaxos;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
+import wtf.g4s8.examples.Log;
+
 import java.util.List;
-import java.util.Optional;
+import java.util.Random;
+import java.util.concurrent.*;
 
 /**
  * Paxos proposer.
@@ -46,14 +46,16 @@ import java.util.Optional;
  * origin proposal, then proposer updates self proposal number with new proposal
  * and tries to propose possible updated value using next proposal again.</li>
  * </p>
+ *
  * @since 1.0
  */
 public final class Proposer<T> {
+    private static final Random RNG = new Random();
+    public static final ScheduledExecutorService EXEC_TIMEOUT = Executors.newScheduledThreadPool(5);
 
     /**
      * Proposer id for logging.
      */
-    private final int id;
 
     /**
      * Current proposal.
@@ -65,54 +67,151 @@ public final class Proposer<T> {
      */
     private final List<? extends Acceptor<T>> acceptors;
 
+    private final CompletableFuture<T> future;
+
     /**
      * New proposer with server id and list of acceptors.
      */
     public Proposer(final int server, final List<? extends Acceptor<T>> acc) {
-        this.id = server;
-        this.prop = Proposal.init(server);
-        this.acceptors = acc;
+        this(Proposal.init(server), acc, new CompletableFuture<>());
     }
 
-    public void propose(final T value) {
-       final Proposal next = this.prop.next();
-        debug("proposing %s value with %s", value, next);
+    private Proposer(final Proposal prop, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future) {
+        this.prop = prop;
+        this.acceptors = acceptors;
+        this.future = future;
+    }
 
-       // shuffle a little just for simulation, it's not a part of paxos
-       final List<? extends Acceptor<T>> copy = new ArrayList<>(this.acceptors);
-       Collections.shuffle(copy);
+    public Future<T> propose(final T value) {
+        final Proposal next = this.prop.next();
+        Log.d("proposing %s : %s", next, value);
+        final QuorumPrepared<T> callback = new QuorumPrepared<>(next, value, this.acceptors, this);
+        this.acceptors.parallelStream().forEach(
+                acc -> acc.prepare(next, callback)
+        );
+        EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+        return this.future;
+    }
 
-       final int quorum = copy.size() / 2 + 1;
+    private Proposer<T> restart(Proposal prop) {
+        return new Proposer<>(prop, this.acceptors, this.future);
+    }
 
-       final T change = copy.parallelStream().limit(quorum)
-           .map(acc -> acc.prepare(next))
-           .filter(promise -> promise.isGreater(next))
-           .max(Acceptor.Promise.CMP_BY_PROPOSAL)
-           .map(Acceptor.Promise::value)
-           .orElse(value);
-       debug("prepared, value=`%s`, %s", change, next);
 
-       // shuffle again for simulation
-       Collections.shuffle(copy);
+    private static final class QuorumPrepared<T> implements Acceptor.PrepareCallback<T> {
 
-       final Optional<Proposal> res = copy.parallelStream().limit(quorum)
-           .map(acc -> acc.accept(next, change))
-           .filter(mp -> mp.compareTo(next) > 0)
-           .max(Comparator.naturalOrder());
-        this.prop = res.map(next::update).orElse(next);
-        if (res.isPresent()) {
-            debug("rejected, %s", this.prop);
-            this.propose(change);
-        } else {
-            debug("accepted, value=`%s`, %s", change, this.prop);
+        private final List<? extends Acceptor<T>> acceptors;
+        private final Proposal prop;
+        private final Proposer<T> proposer;
+
+        private volatile Proposal max;
+        private volatile boolean done;
+        private volatile T value;
+        private volatile int cnt;
+
+        private QuorumPrepared(final Proposal prop, T value, List<? extends Acceptor<T>> acceptors, Proposer<T> proposer) {
+            this.value = value;
+            this.acceptors = acceptors;
+            this.max = prop;
+            this.prop = prop;
+            this.proposer = proposer;
+        }
+
+        @Override
+        public synchronized void promise(Proposal prop) {
+            if (!done) {
+                Log.d("promise %s, cnt=%d", prop, this.cnt);
+            }
+            this.cnt++;
+            next(false);
+        }
+
+        @Override
+        public synchronized void promise(final Proposal prop, final T value) {
+            if (prop.compareTo(this.max) > 0) {
+                this.max = prop;
+                this.value = value;
+                Log.d("prepare reject %s %s", prop, value);
+            }
+            this.cnt++;
+            next(false);
+        }
+
+        void timeout() {
+            Log.d("prepare timeout %s %s", prop, value);
+            next(true);
+        }
+
+        private synchronized void next(boolean force) {
+            if (this.done) {
+                return;
+            }
+
+            final int quorum = this.acceptors.size() / 2 + 1;
+            if (this.cnt >= quorum) {
+                this.done = true;
+                Log.d("prepared by %d acceptors, sending accept %s : %s", quorum, this.prop, this.value);
+                final AcceptCallback<T> callback = new AcceptCallback<>(
+                        this.proposer, this.prop, quorum, this.value
+                );
+                EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+                this.acceptors.parallelStream().forEach(
+                        acc -> acc.accept(this.prop, this.value, callback)
+                );
+            } else if (force) {
+                this.done = true;
+                Log.d("prepared restart by timeout", quorum, this.prop, this.value);
+                this.proposer.restart(this.prop).propose(this.value);
+            }
         }
     }
 
-    private static boolean DEBUG = true;
+    private static final class AcceptCallback<T> implements Acceptor.AcceptCallback<T> {
 
-    private void debug(final String msg, final Object... args) {
-        if (DEBUG) {
-            System.out.printf("proposer(" + id +"): " + msg + '\n', args);
+        private final Proposer<T> proposer;
+        private final Proposal prop;
+        private final int quorum;
+        private final T val;
+
+        private volatile int cnt;
+        private volatile boolean done;
+        private volatile Proposal max;
+
+        private AcceptCallback(Proposer<T> proposer, Proposal prop, int quorum, T val) {
+            this.proposer = proposer;
+            this.prop = prop;
+            this.quorum = quorum;
+            this.max = prop;
+            this.val = val;
+        }
+
+        @Override
+        public synchronized void accepted(Proposal prop, T value) {
+            Log.d("accepted %s : %s", prop, value);
+            this.cnt++;
+            next(false);
+        }
+
+        void timeout() {
+            next(true);
+        }
+
+        private synchronized void next(boolean force) {
+            if (this.done) {
+                return;
+            }
+            if (this.cnt < this.quorum && !force) {
+                return;
+            }
+            this.done = true;
+            final boolean rejected = this.cnt < quorum;
+            if (rejected) {
+                Log.d("propose rejected, restarting");
+                this.proposer.restart(this.prop.update(this.max)).propose(this.val);
+            } else {
+                Log.d("propose completed");
+                this.proposer.future.complete(this.val);
+            }
         }
     }
 }

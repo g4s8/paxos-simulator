@@ -41,6 +41,7 @@ import java.util.Comparator;
  * this value is always returned by prepare phase and can be changed in accept
  * phase with proposal greater than minimal proposal.</li>
  * </ul>
+ *
  * @since 1.0
  */
 public interface Acceptor<T> {
@@ -56,7 +57,7 @@ public interface Acceptor<T> {
      * accepted value.
      * </p>
      */
-    Acceptor.Promise<T> prepare(Proposal prop);
+    void prepare(Proposal prop, PrepareCallback<T> callback);
 
     /**
      * Accept - second phase of accepting value.
@@ -66,44 +67,32 @@ public interface Acceptor<T> {
      * accepted value. In any case it returns minimal proposed number
      * as a response.
      */
-    Proposal accept(Proposal prop, T value);
+    void accept(Proposal prop, T value, AcceptCallback<T> callback);
 
     /**
-     * A promise to not accept a value with fewer proposal number than
-     * accepted.
+     * Callback should be implemented by proposer for asynchronous communication.
+     * Callback can be broken to simulate network issues or node failures
+     *
+     * @param <T>
      */
-    final class Promise<T> {
+    interface PrepareCallback<T> {
+        /**
+         * Acceptor promises to not accept proposals less than proposal in prepare call.
+         *
+         * @param prop Proposal for prepare call
+         */
+        void promise(Proposal prop);
+
 
         /**
-         * Comparator of accepted result by proposal.
+         * Rejected for prepare means that acceptor already promised to not accept
+         * proposals less than some value.
+         *
          */
-        public static final Comparator<Promise<?>> CMP_BY_PROPOSAL =
-            (left, right) -> left.prop.compareTo(right.prop);
+        void promise(Proposal prop, T val);
+    }
 
-        /**
-         * Proposal.
-         */
-        private final Proposal prop;
-
-        /**
-         * Value accepted.
-         */
-        private final T val;
-
-        public Promise(final Proposal prop, final T value) {
-            this.prop = prop;
-            this.val = value;
-        }
-
-        /**
-         * Accepted value.
-         */
-        public T value() {
-            return this.val;
-        }
-
-        public boolean isGreater(final Proposal prop) {
-            return this.prop.compareTo(prop) > 0;
-        }
+    interface AcceptCallback<T> {
+        void accepted(Proposal prop, T value);
     }
 }

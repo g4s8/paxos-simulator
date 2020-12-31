@@ -1,0 +1,670 @@
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 0000000..dc71a1b
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,4 @@
++* text=auto eol=lf
++*.java ident
++*.xml ident
++*.png binary
+diff --git a/.gitignore b/.gitignore
+index 5a0b27a..2f20628 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -25,3 +25,4 @@ target/**
+ .classpath
+ .project
+ .settings/**
++spaxos.iml
+diff --git a/src/main/java/wtf/g4s8/examples/Log.java b/src/main/java/wtf/g4s8/examples/Log.java
+new file mode 100644
+index 0000000..2572d00
+--- /dev/null
++++ b/src/main/java/wtf/g4s8/examples/Log.java
+@@ -0,0 +1,10 @@
++package wtf.g4s8.examples;
++
++public class Log {
++
++    private static final boolean DEBUG = true;
++
++    public static synchronized void d(final String fmt, final Object... args) {
++        System.out.printf(fmt + '\n', args);
++    }
++}
+diff --git a/src/main/java/wtf/g4s8/examples/Main.java b/src/main/java/wtf/g4s8/examples/Main.java
+index a01d017..7b0ffbe 100644
+--- a/src/main/java/wtf/g4s8/examples/Main.java
++++ b/src/main/java/wtf/g4s8/examples/Main.java
+@@ -24,12 +24,14 @@
+ 
+ package wtf.g4s8.examples;
+ 
++import wtf.g4s8.examples.spaxos.*;
++
+ import java.util.ArrayList;
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.Random;
+ import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.ExecutionException;
+ import java.util.concurrent.ExecutorService;
+ import java.util.concurrent.Executors;
+ import java.util.concurrent.atomic.AtomicInteger;
+@@ -39,10 +41,7 @@ import java.util.function.Supplier;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ 
+-import wtf.g4s8.examples.spaxos.*;
+-
+ /**
+- *
+  * @since 1.0
+  */
+ public final class Main {
+@@ -52,12 +51,16 @@ public final class Main {
+         final int nAcc = Integer.parseInt(args[1]);
+ 
+         List<AtomicReference<String>> memory = Stream.generate(() -> new AtomicReference<>(""))
+-            .limit(nAcc).collect(Collectors.toList());
++                .limit(nAcc).collect(Collectors.toList());
++        final ExecutorService accexec = Executors.newCachedThreadPool();
+         List<Acceptor<String>> acceptors = memory.stream()
+-            .map(InMemoryAcceptor::new).map(AcceptorDelaySimulator::new)
+-            .collect(Collectors.toList());
++                .map(InMemoryAcceptor::new)
++                .map(a -> new DropAcceptor<>(0.3, a))
++                .map(a -> new TimeoutAcceptor<>(200, a))
++                .map(a -> new AsyncAcceptor<>(accexec, a))
++                .collect(Collectors.toList());
+         List<Proposer<String>> proposers = Stream.generate(new ProposerGen<>(acceptors))
+-            .limit(nProp).collect(Collectors.toList());
++                .limit(nProp).collect(Collectors.toList());
+ 
+         CountDownLatch cd = new CountDownLatch(1);
+         CountDownLatch done = new CountDownLatch(nProp);
+@@ -72,16 +75,23 @@ public final class Main {
+                     Thread.currentThread().interrupt();
+                     return;
+                 }
+-                proposers.get(val).propose(Integer.toString(val));
++                try {
++                    final String res = proposers.get(val).propose(Integer.toString(val)).get();
++                    System.out.printf("proposed %d get %s\n", val, res);
++                } catch (Exception e) {
++                    throw new RuntimeException(e);
++                }
+                 done.countDown();
+             });
+         }
+         cd.countDown();
+         done.await();
+         exec.shutdown();
++        accexec.shutdown();
++        Proposer.EXEC_TIMEOUT.shutdown();
+ 
+         Map<String, Long> res = memory.stream().map(AtomicReference::get)
+-            .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
++                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+         List<Map.Entry<String, Long>> entries = new ArrayList<>(res.entrySet());
+         entries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
+         System.out.println("Results:");
+@@ -99,37 +109,7 @@ public final class Main {
+         }
+ 
+         public Proposer<T> get() {
+-            return new Proposer<>(this.server.incrementAndGet(),this.acceptors);
+-        }
+-    }
+-
+-    private static final class AcceptorDelaySimulator<T> implements Acceptor<T> {
+-
+-        private static final Random RND = new Random();
+-
+-        private final Acceptor<T> origin;
+-
+-        public AcceptorDelaySimulator(final Acceptor<T> origin) {
+-            this.origin = origin;
+-        }
+-
+-        public Acceptor.Promise<T> prepare(Proposal prop) {
+-            delay();
+-            return this.origin.prepare(prop);
+-        }
+-
+-        public Proposal accept(Proposal prop, T value) {
+-            delay();
+-            return this.origin.accept(prop, value);
+-        }
+-
+-        private static void delay() {
+-            try {
+-                Thread.sleep(RND.nextInt(15));
+-            } catch (InterruptedException iex) {
+-                Thread.currentThread().interrupt();
+-                return;
+-            }
++            return new Proposer<>(this.server.incrementAndGet(), this.acceptors);
+         }
+     }
+ }
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/Acceptor.java b/src/main/java/wtf/g4s8/examples/spaxos/Acceptor.java
+index 3d3a8fb..d2a5429 100644
+--- a/src/main/java/wtf/g4s8/examples/spaxos/Acceptor.java
++++ b/src/main/java/wtf/g4s8/examples/spaxos/Acceptor.java
+@@ -41,6 +41,7 @@ import java.util.Comparator;
+  * this value is always returned by prepare phase and can be changed in accept
+  * phase with proposal greater than minimal proposal.</li>
+  * </ul>
++ *
+  * @since 1.0
+  */
+ public interface Acceptor<T> {
+@@ -56,7 +57,7 @@ public interface Acceptor<T> {
+      * accepted value.
+      * </p>
+      */
+-    Acceptor.Promise<T> prepare(Proposal prop);
++    void prepare(Proposal prop, PrepareCallback<T> callback);
+ 
+     /**
+      * Accept - second phase of accepting value.
+@@ -66,44 +67,32 @@ public interface Acceptor<T> {
+      * accepted value. In any case it returns minimal proposed number
+      * as a response.
+      */
+-    Proposal accept(Proposal prop, T value);
++    void accept(Proposal prop, T value, AcceptCallback<T> callback);
+ 
+     /**
+-     * A promise to not accept a value with fewer proposal number than
+-     * accepted.
++     * Callback should be implemented by proposer for asynchronous communication.
++     * Callback can be broken to simulate network issues or node failures
++     *
++     * @param <T>
+      */
+-    final class Promise<T> {
+-
++    interface PrepareCallback<T> {
+         /**
+-         * Comparator of accepted result by proposal.
++         * Acceptor promises to not accept proposals less than proposal in prepare call.
++         *
++         * @param prop Proposal for prepare call
+          */
+-        public static final Comparator<Promise<?>> CMP_BY_PROPOSAL =
+-            (left, right) -> left.prop.compareTo(right.prop);
++        void promise(Proposal prop);
+ 
+-        /**
+-         * Proposal.
+-         */
+-        private final Proposal prop;
+ 
+         /**
+-         * Value accepted.
++         * Rejected for prepare means that acceptor already promised to not accept
++         * proposals less than some value.
++         *
+          */
+-        private final T val;
+-
+-        public Promise(final Proposal prop, final T value) {
+-            this.prop = prop;
+-            this.val = value;
+-        }
+-
+-        /**
+-         * Accepted value.
+-         */
+-        public T value() {
+-            return this.val;
+-        }
++        void promise(Proposal prop, T val);
++    }
+ 
+-        public boolean isGreater(final Proposal prop) {
+-            return this.prop.compareTo(prop) > 0;
+-        }
++    interface AcceptCallback<T> {
++        void accepted(Proposal prop, T value);
+     }
+ }
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/AsyncAcceptor.java b/src/main/java/wtf/g4s8/examples/spaxos/AsyncAcceptor.java
+new file mode 100644
+index 0000000..be18812
+--- /dev/null
++++ b/src/main/java/wtf/g4s8/examples/spaxos/AsyncAcceptor.java
+@@ -0,0 +1,39 @@
++package wtf.g4s8.examples.spaxos;
++
++import java.util.concurrent.Executor;
++
++public class AsyncAcceptor<T> implements Acceptor<T> {
++
++    private final Executor exec;
++    private final Acceptor<T> origin;
++
++    public AsyncAcceptor(Executor exec, Acceptor<T> origin) {
++        this.exec = exec;
++        this.origin = origin;
++    }
++
++    @Override
++    public void prepare(Proposal prop, PrepareCallback<T> callback) {
++        this.exec.execute(() -> this.origin.prepare(prop, new PrepareCallback<T>() {
++            @Override
++            public void promise(Proposal prop) {
++                exec.execute(() -> callback.promise(prop));
++            }
++
++            @Override
++            public void promise(Proposal prop, T val) {
++                exec.execute(() -> callback.promise(prop, val));
++            }
++        }));
++    }
++
++    @Override
++    public void accept(Proposal prop, T value, AcceptCallback<T> callback) {
++        this.exec.execute(() -> this.origin.accept(prop, value, new AcceptCallback<T>() {
++            @Override
++            public void accepted(Proposal prop, T value) {
++                exec.execute(() -> callback.accepted(prop, value));
++            }
++        }));
++    }
++}
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/DropAcceptor.java b/src/main/java/wtf/g4s8/examples/spaxos/DropAcceptor.java
+new file mode 100644
+index 0000000..4073b0f
+--- /dev/null
++++ b/src/main/java/wtf/g4s8/examples/spaxos/DropAcceptor.java
+@@ -0,0 +1,55 @@
++package wtf.g4s8.examples.spaxos;
++
++import java.util.Random;
++
++public class DropAcceptor<T> implements Acceptor<T> {
++
++    private static final Random RNG = new Random();
++
++    private final double prob;
++    private final Acceptor<T> acc;
++
++    public DropAcceptor(double prob, Acceptor<T> acc) {
++        this.prob = prob;
++        this.acc = acc;
++    }
++
++    @Override
++    public void prepare(Proposal prop, PrepareCallback<T> callback) {
++        if (!drop()) {
++            this.acc.prepare(prop, new PrepareCallback<T>() {
++                @Override
++                public void promise(Proposal prop) {
++                    if (!drop()) {
++                        callback.promise(prop);
++                    }
++                }
++
++                @Override
++                public void promise(Proposal prop, T val) {
++                    if (!drop()) {
++                        callback.promise(prop, val);
++                    }
++                }
++            });
++        }
++    }
++
++    @Override
++    public void accept(Proposal prop, T value, AcceptCallback<T> callback) {
++        if (!drop()) {
++            this.acc.accept(prop, value, new AcceptCallback<T>() {
++                @Override
++                public void accepted(Proposal prop, T value) {
++                    if (!drop()) {
++                        callback.accepted(prop, value);
++                    }
++                }
++            });
++        }
++    }
++
++    private boolean drop() {
++        return RNG.nextDouble() < prob;
++    }
++}
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/InMemoryAcceptor.java b/src/main/java/wtf/g4s8/examples/spaxos/InMemoryAcceptor.java
+index d4fd0c7..e26f41a 100644
+--- a/src/main/java/wtf/g4s8/examples/spaxos/InMemoryAcceptor.java
++++ b/src/main/java/wtf/g4s8/examples/spaxos/InMemoryAcceptor.java
+@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
+ /**
+  * Acceptor implementation which stores values in memory.
+  * See more details in {@link Acceptor} docs.
++ *
+  * @since 1.0
+  */
+ public final class InMemoryAcceptor<T> implements Acceptor<T> {
+@@ -56,19 +57,23 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
+     }
+ 
+     @Override
+-    public synchronized Acceptor.Promise<T> prepare(final Proposal prop) {
+-        if (prop.compareTo(this.min) > 0) {
+-            this.min = prop;
++    public synchronized void prepare(final Proposal prop, final PrepareCallback<T> callback) {
++        if (this.min.compareTo(prop) > 0) {
++            return;
++        }
++        if (this.acc.compareTo(Proposal.ZERO) > 0) {
++            callback.promise(this.acc, mem.get());
++        } else {
++            callback.promise(prop);
+         }
+-        return new Acceptor.Promise<>(this.acc, mem.get());
+     }
+ 
+     @Override
+-    public synchronized Proposal accept(final Proposal prop, final T value) {
++    public synchronized void accept(final Proposal prop, final T value, final AcceptCallback<T> callback) {
+         if (prop.compareTo(this.min) >= 0) {
+             this.acc = this.min = prop;
+             this.mem.set(value);
++            callback.accepted(prop, value);
+         }
+-        return this.min;
+     }
+ }
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/Proposer.java b/src/main/java/wtf/g4s8/examples/spaxos/Proposer.java
+index f653971..0e214d8 100644
+--- a/src/main/java/wtf/g4s8/examples/spaxos/Proposer.java
++++ b/src/main/java/wtf/g4s8/examples/spaxos/Proposer.java
+@@ -24,11 +24,11 @@
+ 
+ package wtf.g4s8.examples.spaxos;
+ 
+-import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.Comparator;
++import wtf.g4s8.examples.Log;
++
+ import java.util.List;
+-import java.util.Optional;
++import java.util.Random;
++import java.util.concurrent.*;
+ 
+ /**
+  * Paxos proposer.
+@@ -46,14 +46,16 @@ import java.util.Optional;
+  * origin proposal, then proposer updates self proposal number with new proposal
+  * and tries to propose possible updated value using next proposal again.</li>
+  * </p>
++ *
+  * @since 1.0
+  */
+ public final class Proposer<T> {
++    private static final Random RNG = new Random();
++    public static final ScheduledExecutorService EXEC_TIMEOUT = Executors.newScheduledThreadPool(5);
+ 
+     /**
+      * Proposer id for logging.
+      */
+-    private final int id;
+ 
+     /**
+      * Current proposal.
+@@ -65,54 +67,151 @@ public final class Proposer<T> {
+      */
+     private final List<? extends Acceptor<T>> acceptors;
+ 
++    private final CompletableFuture<T> future;
++
+     /**
+      * New proposer with server id and list of acceptors.
+      */
+     public Proposer(final int server, final List<? extends Acceptor<T>> acc) {
+-        this.id = server;
+-        this.prop = Proposal.init(server);
+-        this.acceptors = acc;
++        this(Proposal.init(server), acc, new CompletableFuture<>());
++    }
++
++    private Proposer(final Proposal prop, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future) {
++        this.prop = prop;
++        this.acceptors = acceptors;
++        this.future = future;
++    }
++
++    public Future<T> propose(final T value) {
++        final Proposal next = this.prop.next();
++        Log.d("proposing %s : %s", next, value);
++        final QuorumPrepared<T> callback = new QuorumPrepared<>(next, value, this.acceptors, this);
++        this.acceptors.parallelStream().forEach(
++                acc -> acc.prepare(next, callback)
++        );
++        EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
++        return this.future;
+     }
+ 
+-    public void propose(final T value) {
+-       final Proposal next = this.prop.next();
+-        debug("proposing %s value with %s", value, next);
+-
+-       // shuffle a little just for simulation, it's not a part of paxos
+-       final List<? extends Acceptor<T>> copy = new ArrayList<>(this.acceptors);
+-       Collections.shuffle(copy);
+-
+-       final int quorum = copy.size() / 2 + 1;
+-
+-       final T change = copy.parallelStream().limit(quorum)
+-           .map(acc -> acc.prepare(next))
+-           .filter(promise -> promise.isGreater(next))
+-           .max(Acceptor.Promise.CMP_BY_PROPOSAL)
+-           .map(Acceptor.Promise::value)
+-           .orElse(value);
+-       debug("prepared, value=`%s`, %s", change, next);
+-
+-       // shuffle again for simulation
+-       Collections.shuffle(copy);
+-
+-       final Optional<Proposal> res = copy.parallelStream().limit(quorum)
+-           .map(acc -> acc.accept(next, change))
+-           .filter(mp -> mp.compareTo(next) > 0)
+-           .max(Comparator.naturalOrder());
+-        this.prop = res.map(next::update).orElse(next);
+-        if (res.isPresent()) {
+-            debug("rejected, %s", this.prop);
+-            this.propose(change);
+-        } else {
+-            debug("accepted, value=`%s`, %s", change, this.prop);
++    private Proposer<T> restart(Proposal prop) {
++        return new Proposer<>(prop, this.acceptors, this.future);
++    }
++
++
++    private static final class QuorumPrepared<T> implements Acceptor.PrepareCallback<T> {
++
++        private final List<? extends Acceptor<T>> acceptors;
++        private final Proposal prop;
++        private final Proposer<T> proposer;
++
++        private volatile Proposal max;
++        private volatile boolean done;
++        private volatile T value;
++        private volatile int cnt;
++
++        private QuorumPrepared(final Proposal prop, T value, List<? extends Acceptor<T>> acceptors, Proposer<T> proposer) {
++            this.value = value;
++            this.acceptors = acceptors;
++            this.max = prop;
++            this.prop = prop;
++            this.proposer = proposer;
++        }
++
++        @Override
++        public synchronized void promise(Proposal prop) {
++            if (!done) {
++                Log.d("promise %s, cnt=%d", prop, this.cnt);
++            }
++            this.cnt++;
++            next(false);
++        }
++
++        @Override
++        public synchronized void promise(final Proposal prop, final T value) {
++            if (prop.compareTo(this.max) > 0) {
++                this.max = prop;
++                this.value = value;
++                Log.d("prepare reject %s %s", prop, value);
++            }
++            this.cnt++;
++            next(false);
++        }
++
++        void timeout() {
++            Log.d("prepare timeout %s %s", prop, value);
++            next(true);
++        }
++
++        private synchronized void next(boolean force) {
++            if (this.done) {
++                return;
++            }
++
++            final int quorum = this.acceptors.size() / 2 + 1;
++            if (this.cnt >= quorum) {
++                this.done = true;
++                Log.d("prepared by %d acceptors, sending accept %s : %s", quorum, this.prop, this.value);
++                final AcceptCallback<T> callback = new AcceptCallback<>(
++                        this.proposer, this.prop, quorum, this.value
++                );
++                EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
++                this.acceptors.parallelStream().forEach(
++                        acc -> acc.accept(this.prop, this.value, callback)
++                );
++            } else if (force) {
++                this.done = true;
++                Log.d("prepared restart by timeout", quorum, this.prop, this.value);
++                this.proposer.restart(this.prop).propose(this.value);
++            }
+         }
+     }
+ 
+-    private static boolean DEBUG = true;
++    private static final class AcceptCallback<T> implements Acceptor.AcceptCallback<T> {
++
++        private final Proposer<T> proposer;
++        private final Proposal prop;
++        private final int quorum;
++        private final T val;
++
++        private volatile int cnt;
++        private volatile boolean done;
++        private volatile Proposal max;
++
++        private AcceptCallback(Proposer<T> proposer, Proposal prop, int quorum, T val) {
++            this.proposer = proposer;
++            this.prop = prop;
++            this.quorum = quorum;
++            this.max = prop;
++            this.val = val;
++        }
++
++        @Override
++        public synchronized void accepted(Proposal prop, T value) {
++            Log.d("accepted %s : %s", prop, value);
++            this.cnt++;
++            next(false);
++        }
++
++        void timeout() {
++            next(true);
++        }
+ 
+-    private void debug(final String msg, final Object... args) {
+-        if (DEBUG) {
+-            System.out.printf("proposer(" + id +"): " + msg + '\n', args);
++        private synchronized void next(boolean force) {
++            if (this.done) {
++                return;
++            }
++            if (this.cnt < this.quorum && !force) {
++                return;
++            }
++            this.done = true;
++            final boolean rejected = this.cnt < quorum;
++            if (rejected) {
++                Log.d("propose rejected, restarting");
++                this.proposer.restart(this.prop.update(this.max)).propose(this.val);
++            } else {
++                Log.d("propose completed");
++                this.proposer.future.complete(this.val);
++            }
+         }
+     }
+ }
+diff --git a/src/main/java/wtf/g4s8/examples/spaxos/TimeoutAcceptor.java b/src/main/java/wtf/g4s8/examples/spaxos/TimeoutAcceptor.java
+new file mode 100644
+index 0000000..54685be
+--- /dev/null
++++ b/src/main/java/wtf/g4s8/examples/spaxos/TimeoutAcceptor.java
+@@ -0,0 +1,53 @@
++package wtf.g4s8.examples.spaxos;
++
++import java.util.Random;
++
++public class TimeoutAcceptor<T> implements Acceptor<T> {
++    private static final Random RNG = new Random();
++
++    private final int toms;
++    private final Acceptor<T> acc;
++
++    public TimeoutAcceptor(int toms, Acceptor<T> acc) {
++        this.toms = toms;
++        this.acc = acc;
++    }
++
++    @Override
++    public void prepare(Proposal prop, PrepareCallback<T> callback) {
++        sleep();
++        this.acc.prepare(prop, new PrepareCallback<T>() {
++            @Override
++            public void promise(Proposal prop) {
++                sleep();
++                callback.promise(prop);
++            }
++
++            @Override
++            public void promise(Proposal prop, T val) {
++                sleep();
++                callback.promise(prop, val);
++            }
++        });
++    }
++
++    @Override
++    public void accept(Proposal prop, T value, AcceptCallback<T> callback) {
++        sleep();
++        this.acc.accept(prop, value, new AcceptCallback<T>() {
++            @Override
++            public void accepted(Proposal prop, T value) {
++                sleep();
++                callback.accepted(prop, value);
++            }
++        });
++    }
++
++    private void sleep() {
++        try {
++            Thread.sleep(RNG.nextInt(toms));
++        } catch (InterruptedException e) {
++            throw new RuntimeException(e);
++        }
++    }
++}
