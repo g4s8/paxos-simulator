@@ -24,7 +24,10 @@
 
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Sync;
+
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * Acceptor implementation which stores values in memory.
@@ -79,7 +82,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     }
 
     @Override
-    public T getDecision() {
-        return mem.get();
+    public void requestValue(Sync.Receiver<T> callback) {
+        callback.receive(mem.get());
     }
 }

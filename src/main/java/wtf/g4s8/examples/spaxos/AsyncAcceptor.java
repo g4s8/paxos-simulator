@@ -1,11 +1,11 @@
 package wtf.g4s8.examples.spaxos;
 
 import wtf.g4s8.examples.system.Decision;
+import wtf.g4s8.examples.system.Sync;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public class AsyncAcceptor<T> implements Acceptor<T> {
 
@@ -43,13 +43,7 @@ public class AsyncAcceptor<T> implements Acceptor<T> {
     }
 
     @Override
-    public T getDecision() {
-        CompletableFuture<T> d = new CompletableFuture<>();
-        this.exec.execute(() -> d.complete(this.origin.getDecision()));
-        try {
-            return d.get();
-        } catch (Exception e) {
-            return (T) Decision.UNKNOWN;
-        }
+    public void requestValue(Sync.Receiver<T> callback) {
+        this.exec.execute(() -> this.origin.requestValue(callback));
     }
 }

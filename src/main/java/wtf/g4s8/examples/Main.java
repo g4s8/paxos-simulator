@@ -77,7 +77,7 @@ public final class Main {
                 }
                 try {
                     final String res = proposers.get(val).propose(Integer.toString(val)).get();
-                    System.out.printf("[" + Thread.currentThread().getName() + "]" + "proposed %d get %s\n", val, res);
+                    Log.logf("proposed %d get %s\n", val, res);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -94,8 +94,8 @@ public final class Main {
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         List<Map.Entry<String, Long>> entries = new ArrayList<>(res.entrySet());
         entries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
-        System.out.println("[" + Thread.currentThread().getName() + "]" + "Results:");
-        entries.forEach(kv -> System.out.printf("[" + Thread.currentThread().getName() + "]" + "%s: %d\n", kv.getKey(), kv.getValue()));
+        Log.log("Results:");
+        entries.forEach(kv ->Log.logf("%s: %d\n", kv.getKey(), kv.getValue()));
     }
 
     private static final class ProposerGen<T> implements Supplier<Proposer<T>> {

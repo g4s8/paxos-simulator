@@ -1,5 +1,7 @@
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Sync;
+
 import java.util.Random;
 
 public class TimeoutAcceptor<T> implements Acceptor<T> {
@@ -44,9 +46,9 @@ public class TimeoutAcceptor<T> implements Acceptor<T> {
     }
 
     @Override
-    public T getDecision() {
+    public void requestValue(Sync.Receiver<T> callback) {
         sleep();
-        return acc.getDecision();
+        acc.requestValue(callback);
     }
 
     private void sleep() {

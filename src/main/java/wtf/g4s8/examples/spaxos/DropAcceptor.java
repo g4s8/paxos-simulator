@@ -1,8 +1,10 @@
 package wtf.g4s8.examples.spaxos;
 
 import wtf.g4s8.examples.system.Decision;
+import wtf.g4s8.examples.system.Sync;
 
 import java.util.Random;
+import java.util.function.Consumer;
 
 public class DropAcceptor<T> implements Acceptor<T> {
 
@@ -52,11 +54,10 @@ public class DropAcceptor<T> implements Acceptor<T> {
     }
 
     @Override
-    public T getDecision() {
+    public void requestValue(Sync.Receiver<T> callback) {
         if (!drop()) {
-            return acc.getDecision();
+            acc.requestValue(callback);
         }
-        return (T) Decision.UNKNOWN;
     }
 
     private boolean drop() {

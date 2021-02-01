@@ -1,14 +1,12 @@
 package wtf.g4s8.examples.system;
 
 
-import wtf.g4s8.examples.spaxos.AsyncAcceptor;
+import wtf.g4s8.examples.spaxos.Acceptor;
 import wtf.g4s8.examples.spaxos.Proposer;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class StupidTransactionManager implements TransactionManager{
 
@@ -31,7 +29,6 @@ public class StupidTransactionManager implements TransactionManager{
                 }
                 try {
                     System.out.println("WTF" + rm.update(patch).get());
-                    //System.out.printf("[" + Thread.currentThread().getName() + "]" + "proposed %d get %s\n", val, res);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -62,7 +59,6 @@ public class StupidTransactionManager implements TransactionManager{
                 }
                 try {
                     rm.commit(patch);
-                    //System.out.printf("[" + Thread.currentThread().getName() + "]" + "proposed %d get %s\n", val, res);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -77,11 +73,21 @@ public class StupidTransactionManager implements TransactionManager{
     }
 
     @Override
-    public Decision sync(Map<Integer, List<AsyncAcceptor<Decision>>> acceptors) {
-        return acceptors.values().stream().anyMatch(rmAcceptors ->
-                rmAcceptors.stream().filter(acceptor ->
-                        acceptor.getDecision().equals(Decision.COMMIT)).count() < ((rmAcceptors.size() / 2) + 1)) ? Decision.ABORT : Decision.COMMIT;
-        //return acceptors.get(0).stream().map(Acceptor::getDecision).allMatch(decision -> decision.equals(Decision.COMMIT)) ? Decision.COMMIT : Decision.ABORT;
+    public Decision sync(List<StupidResourceManager<Decision>> replicas) {
+        ConcurrentMap<Integer, CopyOnWriteArrayList<Decision>> sync = new ConcurrentHashMap<>();
+
+        replicas.parallelStream().forEach(ac -> sync.put(ac.id, new CopyOnWriteArrayList<>()));
+
+        replicas.parallelStream().forEach(r -> {
+            r.accs.forEach(a -> a.requestValue(value -> {
+                sync.get(r.id).add(value);
+            }));
+        });
+
+
+        return sync.values().stream().anyMatch(rmAcceptors ->
+                rmAcceptors.stream().filter(d ->
+                        d.equals(Decision.COMMIT)).count() < ((rmAcceptors.size() / 2) + 1)) ? Decision.ABORT : Decision.COMMIT;
     }
 
 }
