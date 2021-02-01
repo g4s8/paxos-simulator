@@ -43,6 +43,12 @@ public class TimeoutAcceptor<T> implements Acceptor<T> {
         });
     }
 
+    @Override
+    public T getDecision() {
+        sleep();
+        return acc.getDecision();
+    }
+
     private void sleep() {
         try {
             Thread.sleep(RNG.nextInt(toms));

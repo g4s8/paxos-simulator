@@ -1,5 +1,7 @@
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Decision;
+
 import java.util.Random;
 
 public class DropAcceptor<T> implements Acceptor<T> {
@@ -47,6 +49,14 @@ public class DropAcceptor<T> implements Acceptor<T> {
                 }
             });
         }
+    }
+
+    @Override
+    public T getDecision() {
+        if (!drop()) {
+            return acc.getDecision();
+        }
+        return (T) Decision.UNKNOWN;
     }
 
     private boolean drop() {

@@ -24,7 +24,10 @@
 
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Decision;
+
 import java.util.Comparator;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Paxos acceptor.
@@ -45,6 +48,8 @@ import java.util.Comparator;
  * @since 1.0
  */
 public interface Acceptor<T> {
+
+    T getDecision();
 
     /**
      * Prepare - first phase of accepting value.

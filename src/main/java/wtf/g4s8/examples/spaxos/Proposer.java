@@ -120,7 +120,7 @@ public final class Proposer<T> {
         @Override
         public synchronized void promise(Proposal prop) {
             if (!done) {
-                Log.d("promise %s, cnt=%d", prop, this.cnt);
+                Log.d("promise %s, cnt=%d", prop, this.cnt + 1);
             }
             this.cnt++;
             next(false);
@@ -133,7 +133,6 @@ public final class Proposer<T> {
                 this.value = value;
                 Log.d("prepare reject %s %s", prop, value);
             }
-            this.cnt++;
             next(false);
         }
 

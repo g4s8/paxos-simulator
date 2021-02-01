@@ -64,6 +64,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
         if (this.acc.compareTo(Proposal.ZERO) > 0) {
             callback.promise(this.acc, mem.get());
         } else {
+            this.min = prop;
             callback.promise(prop);
         }
     }
@@ -75,5 +76,10 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
             this.mem.set(value);
             callback.accepted(prop, value);
         }
+    }
+
+    @Override
+    public T getDecision() {
+        return mem.get();
     }
 }

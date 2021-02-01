@@ -1,6 +1,11 @@
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Decision;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class AsyncAcceptor<T> implements Acceptor<T> {
 
@@ -35,5 +40,16 @@ public class AsyncAcceptor<T> implements Acceptor<T> {
                 exec.execute(() -> callback.accepted(prop, value));
             }
         }));
+    }
+
+    @Override
+    public T getDecision() {
+        CompletableFuture<T> d = new CompletableFuture<>();
+        this.exec.execute(() -> d.complete(this.origin.getDecision()));
+        try {
+            return d.get();
+        } catch (Exception e) {
+            return (T) Decision.UNKNOWN;
+        }
     }
 }
