@@ -137,6 +137,9 @@ public final class Proposer<T> {
         }
 
         void timeout() {
+            if (this.done) {
+                return;
+            }
             Log.d("prepare timeout %s %s", prop, value);
             next(true);
         }
@@ -153,7 +156,7 @@ public final class Proposer<T> {
                 final AcceptCallback<T> callback = new AcceptCallback<>(
                         this.proposer, this.prop, quorum, this.value
                 );
-                EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+                EXEC_TIMEOUT.schedule(callback::timeout, 3000 + RNG.nextInt(500), TimeUnit.MILLISECONDS);
                 this.acceptors.parallelStream().forEach(
                         acc -> acc.accept(this.prop, this.value, callback)
                 );
@@ -209,6 +212,7 @@ public final class Proposer<T> {
                 this.proposer.restart(this.prop.update(this.max)).propose(this.val);
             } else {
                 Log.d("propose completed");
+                //Proposer.EXEC_TIMEOUT.shutdown();
                 this.proposer.future.complete(this.val);
             }
         }

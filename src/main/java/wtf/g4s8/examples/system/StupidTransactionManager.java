@@ -1,95 +1,75 @@
 package wtf.g4s8.examples.system;
 
-
-import wtf.g4s8.examples.spaxos.Acceptor;
-import wtf.g4s8.examples.spaxos.Proposer;
-
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.*;
 
 public class StupidTransactionManager implements TransactionManager{
 
-    @Override
-    public void update(String uid, int currentValue, int proposedValue, List<? extends ResourceManager> replicas) throws Exception {
+    private final int timeout;
+    private final List<ResourceManager> replicas;
+    private final ConcurrentMap<Integer, List<Decision>> sync;
+    private final int quorum;
 
-        CountDownLatch cd = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(replicas.size());
-        ExecutorService exec = Executors.newCachedThreadPool();
-
-        Patch patch = new Patch(uid, currentValue, proposedValue, replicas);
-
-        for (ResourceManager rm : replicas) {
-            exec.submit(() -> {
-                try {
-                    cd.await();
-                } catch (InterruptedException iex) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-                try {
-                    System.out.println("WTF" + rm.update(patch).get());
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-                done.countDown();
-            });
-        }
-        cd.countDown();
-        done.await();
-        exec.shutdown();
-        Proposer.EXEC_TIMEOUT.shutdown();
+    public StupidTransactionManager(int syncTimeOutInSeconds, List<ResourceManager> resourceManagers) {
+        this.replicas = resourceManagers;
+        this.timeout = syncTimeOutInSeconds;
+        this.sync = new ConcurrentHashMap<>();
+        replicas.parallelStream().forEach(ac -> sync.put(ac.id(), Collections.synchronizedList(new ArrayList<>())));
+        this.quorum = ((replicas.size() + 1)/ 2) + 1;
     }
 
     @Override
-    public void commit(String uid, int currentValue, int proposedValue, List<? extends ResourceManager> replicas) throws Exception {
-        CountDownLatch cd = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(replicas.size());
-        ExecutorService exec = Executors.newCachedThreadPool();
-
-        Patch patch = new Patch(uid, currentValue, proposedValue, replicas);
+    public void update(String uid, int currentValue, int proposedValue)  {
+        Patch patch = new Patch(uid, currentValue, proposedValue);
 
         for (ResourceManager rm : replicas) {
-            exec.submit(() -> {
-                try {
-                    cd.await();
-                } catch (InterruptedException iex) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-                try {
-                    rm.commit(patch);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-                done.countDown();
-            });
+            rm.update(patch);
         }
-        cd.countDown();
-        done.await();
-        exec.shutdown();
-
-
+        //Proposer.EXEC_TIMEOUT.shutdown();
+        final ScheduledExecutorService pool = Executors.newScheduledThreadPool(5);
+        pool.schedule(() -> {
+            sync();
+            pool.schedule(() -> {
+                if(Decision.COMMIT.equals(decision())) {
+                    commit(patch);
+                    pool.schedule(() -> {
+                        System.out.println("COMMITTED");
+                        replicas.forEach(replica -> {
+                            System.out.printf("RM-%s has new value: %s\n", replica.id(), replica.storage().value().toString());
+                        });
+                        System.exit(0);
+                    }, timeout, TimeUnit.SECONDS);
+                } else {
+                    System.out.println("TODO --");
+                    System.exit(0);
+                }
+            }, timeout, TimeUnit.SECONDS);
+        }, timeout, TimeUnit.SECONDS);
     }
 
-    @Override
-    public Decision sync(List<StupidResourceManager<Decision>> replicas) {
-        ConcurrentMap<Integer, CopyOnWriteArrayList<Decision>> sync = new ConcurrentHashMap<>();
+    private void commit(Patch patch) {
+        for (ResourceManager rm : replicas) {
+            rm.commit(patch);
+        }
+    }
 
-        replicas.parallelStream().forEach(ac -> sync.put(ac.id, new CopyOnWriteArrayList<>()));
-
+    private void sync() {
         replicas.parallelStream().forEach(r -> {
-            r.accs.forEach(a -> a.requestValue(value -> {
-                sync.get(r.id).add(value);
+            r.acceptors().forEach(a -> a.requestValue(value -> {
+                sync.get(r.id()).add(value);
             }));
         });
-
-
-        return sync.values().stream().anyMatch(rmAcceptors ->
-                rmAcceptors.stream().filter(d ->
-                        d.equals(Decision.COMMIT)).count() < ((rmAcceptors.size() / 2) + 1)) ? Decision.ABORT : Decision.COMMIT;
     }
 
+    private Decision decision() {
+        return sync.values().stream().anyMatch(rmAcceptors ->
+                rmAcceptors.stream()
+                        .filter(d -> d.equals(Decision.COMMIT))
+                        .count() < quorum)
+                ? Decision.ABORT : Decision.COMMIT;
+    }
 }
 
 

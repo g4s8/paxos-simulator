@@ -4,19 +4,18 @@ import wtf.g4s8.examples.spaxos.Acceptor;
 import wtf.g4s8.examples.spaxos.Proposer;
 
 import java.util.List;
-import java.util.concurrent.Future;
 
 import static wtf.g4s8.examples.system.Decision.ABORT;
 import static wtf.g4s8.examples.system.Decision.COMMIT;
 
-public class StupidResourceManager<T> implements ResourceManager {
-    public final List<Acceptor<T>> accs;
+public class StupidResourceManager implements ResourceManager {
+    public final List<Acceptor<Decision>> accs;
     Integer id;
     Proposer<Decision> decisionProposer;
-    InMemoryStorage storage;
+    Storage storage;
 
 
-    public StupidResourceManager(int id, Proposer<Decision> decisionProposer, List<Acceptor<T>> accs) {
+    public StupidResourceManager(int id, Proposer<Decision> decisionProposer, List<Acceptor<Decision>> accs) {
         this.decisionProposer = decisionProposer;
         this.id = id;
         storage = new InMemoryStorage();
@@ -24,27 +23,38 @@ public class StupidResourceManager<T> implements ResourceManager {
     }
 
     @Override
-    public Future update(Patch patch) {
-        if(!storage.isLocked()) {
-            if (storage.value() == patch.lastKnownValue) {
+    public void update(Patch patch) {
+        if(!storage.isLocked() && storage.value() == patch.lastKnownValue) {
                 storage.lock(patch.uid);
-                storage.saveDecision(COMMIT);
+                storage.saveDecision(patch.uid, COMMIT);
                 storage.saveProposedValue(patch.newValue);
-                return decisionProposer.propose(COMMIT);
-            } else {
-                storage.lock(patch.uid);
-                storage.saveDecision(ABORT);
-                return decisionProposer.propose(ABORT);
-            }
+                decisionProposer.propose(COMMIT);
+        } else {
+            storage.saveDecision(patch.uid, ABORT);
+            decisionProposer.propose(ABORT);
         }
-        return null;
     }
 
     @Override
     public void commit(Patch patch) {
         if (storage.value() == patch.lastKnownValue && storage.isLockedBy(patch.uid)) {
-            storage.value = storage.proposedValue();
+            storage.updateValue(storage.proposedValue());
             storage.flush();
         }
+    }
+
+    @Override
+    public Integer id() {
+        return this.id;
+    }
+
+    @Override
+    public List<Acceptor<Decision>> acceptors() {
+        return this.accs;
+    }
+
+    @Override
+    public Storage storage() {
+        return this.storage;
     }
 }

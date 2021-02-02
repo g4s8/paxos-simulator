@@ -1,11 +1,8 @@
 package wtf.g4s8.examples.spaxos;
 
-import wtf.g4s8.examples.system.Decision;
 import wtf.g4s8.examples.system.Sync;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.function.Consumer;
 
 public class AsyncAcceptor<T> implements Acceptor<T> {
 

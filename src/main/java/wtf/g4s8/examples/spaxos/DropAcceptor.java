@@ -1,10 +1,8 @@
 package wtf.g4s8.examples.spaxos;
 
-import wtf.g4s8.examples.system.Decision;
 import wtf.g4s8.examples.system.Sync;
 
 import java.util.Random;
-import java.util.function.Consumer;
 
 public class DropAcceptor<T> implements Acceptor<T> {
 
