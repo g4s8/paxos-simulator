@@ -27,13 +27,14 @@ public class TransactionTest {
     private final boolean withTimeout;
     private final int timeout;
     private final boolean async;
+    private final int syncDelay;
 
 
     public void test() throws Exception {
         writeConcurrent(
                 nUpdaters,
                 new StupidTransactionManager(
-                        1,
+                        syncDelay,
                         resourceManagerCluster(
                                 acceptors()
                         )

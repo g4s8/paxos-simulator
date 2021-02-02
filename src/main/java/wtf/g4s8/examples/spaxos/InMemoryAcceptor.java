@@ -27,7 +27,6 @@ package wtf.g4s8.examples.spaxos;
 import wtf.g4s8.examples.system.Sync;
 
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 /**
  * Acceptor implementation which stores values in memory.

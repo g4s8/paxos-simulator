@@ -9,10 +9,11 @@ public class Main {
                 .nUpdaters(1)
                 .async(true)
                 .accexec(Executors.newCachedThreadPool())
-                //.withTimeout(true)
-                //.timeout(2000)
-//                .withDrops(true)
-//                .dropRate(0.1)
+                .withTimeout(true)
+                .timeout(200)
+                .withDrops(true)
+                .dropRate(0.3)
+                .syncDelay(30)
                 .build()
         .test();
     }

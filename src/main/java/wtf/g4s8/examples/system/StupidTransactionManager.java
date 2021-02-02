@@ -1,5 +1,7 @@
 package wtf.g4s8.examples.system;
 
+import wtf.g4s8.examples.spaxos.Proposer;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -27,9 +29,9 @@ public class StupidTransactionManager implements TransactionManager{
         for (ResourceManager rm : replicas) {
             rm.update(patch);
         }
-        //Proposer.EXEC_TIMEOUT.shutdown();
         final ScheduledExecutorService pool = Executors.newScheduledThreadPool(5);
         pool.schedule(() -> {
+            Proposer.EXEC_TIMEOUT.shutdown();
             sync();
             pool.schedule(() -> {
                 if(Decision.COMMIT.equals(decision())) {
@@ -58,6 +60,7 @@ public class StupidTransactionManager implements TransactionManager{
     private void sync() {
         replicas.parallelStream().forEach(r -> {
             r.acceptors().forEach(a -> a.requestValue(value -> {
+                System.out.println("SENDING VOTE:" + value);
                 sync.get(r.id()).add(value);
             }));
         });

@@ -133,6 +133,12 @@ public final class Proposer<T> {
                 this.value = value;
                 Log.d("prepare reject %s %s", prop, value);
             }
+            else if (!this.value.equals(value)) {
+                Log.d("already prepared, restart with other value", value);
+                this.proposer.restart(this.prop.update(this.max)).propose(value);
+            } else {
+                this.cnt++;
+            }
             next(false);
         }
 
@@ -162,7 +168,7 @@ public final class Proposer<T> {
                 );
             } else if (force) {
                 this.done = true;
-                Log.d("prepared restart by timeout", quorum, this.prop, this.value);
+                Log.d("prepared restart by timeout %s: %s", this.prop, this.value);
                 this.proposer.restart(this.prop).propose(this.value);
             }
         }
@@ -208,11 +214,10 @@ public final class Proposer<T> {
             this.done = true;
             final boolean rejected = this.cnt < quorum;
             if (rejected) {
-                Log.d("propose rejected, restarting");
+                Log.d("propose rejected, restarting %s", this.prop);
                 this.proposer.restart(this.prop.update(this.max)).propose(this.val);
             } else {
-                Log.d("propose completed");
-                //Proposer.EXEC_TIMEOUT.shutdown();
+                Log.d("propose completed %s", this.prop);
                 this.proposer.future.complete(this.val);
             }
         }
