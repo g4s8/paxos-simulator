@@ -54,7 +54,14 @@ public class DropAcceptor<T> implements Acceptor<T> {
     @Override
     public void requestValue(Sync.Receiver<T> callback) {
         if (!drop()) {
-            acc.requestValue(callback);
+            acc.requestValue(new Sync.Receiver<T>(){
+                @Override
+                public void receive(T value) {
+                    if (!drop()) {
+                        callback.receive(value);
+                    }
+                }
+            });
         }
     }
 

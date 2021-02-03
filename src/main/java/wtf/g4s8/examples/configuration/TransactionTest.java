@@ -1,8 +1,9 @@
-package wtf.g4s8.examples.system;
+package wtf.g4s8.examples.configuration;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import wtf.g4s8.examples.spaxos.*;
+import wtf.g4s8.examples.system.*;
 
 import java.util.List;
 import java.util.Map;

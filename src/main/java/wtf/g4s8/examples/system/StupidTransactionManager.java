@@ -34,8 +34,8 @@ public class StupidTransactionManager implements TransactionManager{
             Proposer.EXEC_TIMEOUT.shutdown();
             sync();
             pool.schedule(() -> {
-                if(Decision.COMMIT.equals(decision())) {
-                    commit(patch);
+                if(Decision.PREPARE.equals(decision())) {
+                    commit(patch.uid);
                     pool.schedule(() -> {
                         System.out.println("COMMITTED");
                         replicas.forEach(replica -> {
@@ -51,17 +51,19 @@ public class StupidTransactionManager implements TransactionManager{
         }, timeout, TimeUnit.SECONDS);
     }
 
-    private void commit(Patch patch) {
+    private void commit(String transactionId) {
         for (ResourceManager rm : replicas) {
-            rm.commit(patch);
+            rm.commit(transactionId);
         }
     }
 
     private void sync() {
         replicas.parallelStream().forEach(r -> {
             r.acceptors().forEach(a -> a.requestValue(value -> {
-                System.out.println("SENDING VOTE:" + value);
-                sync.get(r.id()).add(value);
+                if (!Decision.NONE.equals(value)) {
+                    System.out.println("SENDING VOTE:" + value);
+                    sync.get(r.id()).add(value);
+                }
             }));
         });
     }
@@ -69,9 +71,9 @@ public class StupidTransactionManager implements TransactionManager{
     private Decision decision() {
         return sync.values().stream().anyMatch(rmAcceptors ->
                 rmAcceptors.stream()
-                        .filter(d -> d.equals(Decision.COMMIT))
+                        .filter(d -> d.equals(Decision.PREPARE))
                         .count() < quorum)
-                ? Decision.ABORT : Decision.COMMIT;
+                ? Decision.ABORT : Decision.PREPARE;
     }
 }
 

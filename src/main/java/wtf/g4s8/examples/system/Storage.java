@@ -2,7 +2,6 @@ package wtf.g4s8.examples.system;
 
 public interface Storage {
 
-
     Integer value();
 
     boolean isLocked();

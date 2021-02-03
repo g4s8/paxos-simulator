@@ -21,13 +21,12 @@ public class TimeoutResourceManager implements ResourceManager {
     public void update(Patch patch) {
         sleep();
         this.origin.update(patch);
-
     }
 
     @Override
-    public void commit(Patch patch) {
+    public void commit(String transactionId) {
         sleep();
-        this.origin.commit(patch);
+        this.origin.commit(transactionId);
     }
 
     @Override

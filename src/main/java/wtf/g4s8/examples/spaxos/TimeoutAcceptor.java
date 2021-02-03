@@ -48,7 +48,13 @@ public class TimeoutAcceptor<T> implements Acceptor<T> {
     @Override
     public void requestValue(Sync.Receiver<T> callback) {
         sleep();
-        acc.requestValue(callback);
+        acc.requestValue(new Receiver<>() {
+            @Override
+            public void receive(T value) {
+                sleep();
+                callback.receive(value);
+            }
+        });
     }
 
     private void sleep() {

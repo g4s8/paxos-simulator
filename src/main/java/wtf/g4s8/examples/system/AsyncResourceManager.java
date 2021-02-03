@@ -22,8 +22,8 @@ public class AsyncResourceManager implements ResourceManager {
     }
 
     @Override
-    public void commit(Patch patch) {
-        this.exec.execute(() -> this.origin.commit(patch));
+    public void commit(String transactionId) {
+        this.exec.execute(() -> this.origin.commit(transactionId));
     }
 
     @Override

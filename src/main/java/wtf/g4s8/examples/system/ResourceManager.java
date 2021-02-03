@@ -5,12 +5,10 @@ import wtf.g4s8.examples.spaxos.Acceptor;
 import java.util.List;
 
 public interface ResourceManager {
-    //check if update is doable.
-    //Yes -> prepare
-    //No -> abort
+
     void update(Patch patch);
 
-    void commit(Patch patch);
+    void commit(String transactionId);
 
     Integer id();
 

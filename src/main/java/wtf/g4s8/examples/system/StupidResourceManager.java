@@ -6,7 +6,7 @@ import wtf.g4s8.examples.spaxos.Proposer;
 import java.util.List;
 
 import static wtf.g4s8.examples.system.Decision.ABORT;
-import static wtf.g4s8.examples.system.Decision.COMMIT;
+import static wtf.g4s8.examples.system.Decision.PREPARE;
 
 public class StupidResourceManager implements ResourceManager {
     public final List<Acceptor<Decision>> accs;
@@ -26,9 +26,9 @@ public class StupidResourceManager implements ResourceManager {
     public void update(Patch patch) {
         if(!storage.isLocked() && storage.value() == patch.lastKnownValue) {
                 storage.lock(patch.uid);
-                storage.saveDecision(patch.uid, COMMIT);
+                storage.saveDecision(patch.uid, PREPARE);
                 storage.saveProposedValue(patch.newValue);
-                decisionProposer.propose(COMMIT);
+                decisionProposer.propose(PREPARE);
         } else {
             storage.saveDecision(patch.uid, ABORT);
             decisionProposer.propose(ABORT);
@@ -36,8 +36,8 @@ public class StupidResourceManager implements ResourceManager {
     }
 
     @Override
-    public void commit(Patch patch) {
-        if (storage.value() == patch.lastKnownValue && storage.isLockedBy(patch.uid)) {
+    public void commit(String transactionId) {
+        if (storage.isLockedBy(transactionId)) {
             storage.updateValue(storage.proposedValue());
             storage.flush();
         }

@@ -25,6 +25,7 @@
 package wtf.g4s8.examples.spaxos;
 
 import wtf.g4s8.examples.Log;
+import wtf.g4s8.examples.configuration.Config;
 
 import java.util.List;
 import java.util.Random;
@@ -89,7 +90,7 @@ public final class Proposer<T> {
         this.acceptors.parallelStream().forEach(
                 acc -> acc.prepare(next, callback)
         );
-        EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+        EXEC_TIMEOUT.schedule(callback::timeout, Config.delay + RNG.nextInt(Config.delay/6), TimeUnit.MILLISECONDS);
         return this.future;
     }
 

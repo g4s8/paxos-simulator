@@ -25,9 +25,9 @@ public class DropResourceManager implements ResourceManager {
     }
 
     @Override
-    public void commit(Patch patch) {
+    public void commit(String transactionId) {
         if (alive()) {
-            this.origin.commit(patch);
+            this.origin.commit(transactionId);
         }
     }
 

@@ -41,6 +41,11 @@ public class AsyncAcceptor<T> implements Acceptor<T> {
 
     @Override
     public void requestValue(Sync.Receiver<T> callback) {
-        this.exec.execute(() -> this.origin.requestValue(callback));
+        this.exec.execute(() -> this.origin.requestValue(new Receiver<>() {
+            @Override
+            public void receive(T value) {
+                exec.execute(() -> callback.receive(value));
+            }
+        }));
     }
 }

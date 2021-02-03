@@ -82,6 +82,9 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
 
     @Override
     public void requestValue(Sync.Receiver<T> callback) {
-        callback.receive(mem.get());
+        final T value = mem.get();
+        if (value != null) {
+            callback.receive(value);
+        }
     }
 }
