@@ -31,7 +31,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,7 +53,7 @@ public final class Main {
                 .limit(nAcc).collect(Collectors.toList());
         final ExecutorService accexec = Executors.newCachedThreadPool();
         List<Acceptor<String>> acceptors = memory.stream()
-                .map(InMemoryAcceptor::new)
+                .map(mem -> new InMemoryAcceptor<>(mem, 0, 0, "single-paxos"))
                 .map(a -> new DropAcceptor<>(0.3, a))
                 .map(a -> new TimeoutAcceptor<>(200, a))
                 .map(a -> new AsyncAcceptor<>(accexec, a))
@@ -77,7 +76,7 @@ public final class Main {
                 }
                 try {
                     final String res = proposers.get(val).propose(Integer.toString(val)).get();
-                    Log.logf("proposed %d get %s\n", val, res);
+                    System.out.printf("proposed %d get %s\n", val, res);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -94,8 +93,8 @@ public final class Main {
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         List<Map.Entry<String, Long>> entries = new ArrayList<>(res.entrySet());
         entries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
-        Log.log("Results:");
-        entries.forEach(kv ->Log.logf("%s: %d\n", kv.getKey(), kv.getValue()));
+        System.out.println("Results:");
+        entries.forEach(kv -> System.out.printf("%s: %d\n", kv.getKey(), kv.getValue()));
     }
 
     private static final class ProposerGen<T> implements Supplier<Proposer<T>> {
@@ -109,7 +108,7 @@ public final class Main {
         }
 
         public Proposer<T> get() {
-            return new Proposer<>(this.server.incrementAndGet(), this.acceptors);
+            return new Proposer<>(this.server.incrementAndGet(), "single-paxos", this.acceptors);
         }
     }
 }

@@ -1,6 +1,8 @@
 package wtf.g4s8.examples.system;
 
+import wtf.g4s8.examples.configuration.TransactionTest;
 import wtf.g4s8.examples.spaxos.Acceptor;
+import wtf.g4s8.examples.system.storage.Storage;
 
 import java.util.List;
 import java.util.Random;
@@ -18,9 +20,9 @@ public class DropResourceManager implements ResourceManager {
     }
 
     @Override
-    public void update(Patch patch) {
+    public void update(Patch patch, List<Acceptor<Decision>> acceptors) {
         if (alive()) {
-            this.origin.update(patch);
+            this.origin.update(patch, acceptors);
         }
     }
 
@@ -32,13 +34,20 @@ public class DropResourceManager implements ResourceManager {
     }
 
     @Override
+    public void abort(String transactionId) {
+        if (alive()) {
+            this.origin.abort(transactionId);
+        }
+    }
+
+    @Override
     public Integer id() {
         return this.origin.id();
     }
 
     @Override
-    public List<Acceptor<Decision>> acceptors() {
-        return this.origin.acceptors();
+    public List<Acceptor<Decision>> acceptors(String transactionId) {
+        return this.origin.acceptors(transactionId);
     }
 
     @Override

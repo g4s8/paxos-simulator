@@ -40,6 +40,9 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
      * Memory storage.
      */
     private final AtomicReference<T> mem;
+    private final Integer proposerServerId;
+    private final Integer parentServerId;
+    private final String transactionId;
 
     /**
      * Minimal proposal.
@@ -54,8 +57,11 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     /**
      * New in memory acceptor with provided memory.
      */
-    public InMemoryAcceptor(final AtomicReference<T> mem) {
+    public InMemoryAcceptor(final AtomicReference<T> mem, Integer proposerServerId, Integer parentServerId, String transactionId) {
         this.mem = mem;
+        this.proposerServerId = proposerServerId;
+        this.parentServerId = parentServerId;
+        this.transactionId = transactionId;
     }
 
     @Override
@@ -76,6 +82,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
         if (prop.compareTo(this.min) >= 0) {
             this.acc = this.min = prop;
             this.mem.set(value);
+            System.out.printf("[%s] ACCEPTOR(for %d on %d) accepting %s %s\n", transactionId, proposerServerId, parentServerId, prop, value);
             callback.accepted(prop, value);
         }
     }
@@ -84,6 +91,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     public void requestValue(Sync.Receiver<T> callback) {
         final T value = mem.get();
         if (value != null) {
+            System.out.printf("[%s] ACCEPTOR(for %d on %d) SENDING VOTE: %s\n", transactionId, proposerServerId, parentServerId, value);
             callback.receive(value);
         }
     }

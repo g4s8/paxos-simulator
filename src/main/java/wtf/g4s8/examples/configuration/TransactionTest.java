@@ -6,7 +6,6 @@ import wtf.g4s8.examples.spaxos.*;
 import wtf.g4s8.examples.system.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -36,9 +35,7 @@ public class TransactionTest {
                 nUpdaters,
                 new StupidTransactionManager(
                         syncDelay,
-                        resourceManagerCluster(
-                                acceptors()
-                        )
+                        resourceManagerCluster()
                 )
         );
     }
@@ -74,17 +71,9 @@ public class TransactionTest {
     /**
      * Creates {@link #nReplicas} ResourceManagers with Paxos instance connected to TM and all RMs.
      */
-    private List<ResourceManager> resourceManagerCluster(Map<Integer, List<Acceptor<Decision>>> acceptors) {
+    private List<ResourceManager> resourceManagerCluster() {
         Stream<ResourceManager> rmStream = IntStream.rangeClosed(1, nReplicas).mapToObj(
-                id ->
-                        new StupidResourceManager(
-                                id,
-                                new Proposer<>(
-                                        id,
-                                        acceptors.get(id - 1)
-                                ),
-                                acceptors.get(id - 1)
-                        )
+                StupidResourceManager::new
         );
         if (withDrops) {
             rmStream = rmStream
@@ -108,29 +97,26 @@ public class TransactionTest {
      * Each ResourceManager (nReplicas) has an acceptor on every Replica, including itself. (nReplicas * nReplicas)
      * TransactionManager also has an acceptor for every ResourceManager. (nReplicas * (nReplicas + 1))
      */
-    private Map<Integer, List<Acceptor<Decision>>> acceptors() {
-        final AtomicInteger counter = new AtomicInteger();
-        Stream<Acceptor<Decision>> acceptorStream = Stream.generate(() -> new AtomicReference<>(Decision.NONE))
-                .limit(nReplicas * (nReplicas + 1))
-                .map(InMemoryAcceptor::new);
+    public static List<Acceptor<Decision>> acceptors(int serverId, String transactionId) {
+        Stream<Acceptor<Decision>> acceptorStream = IntStream.rangeClosed(0, Config.nReplicas)
+                .limit(Config.nReplicas + 1)
+                .mapToObj(id -> new InMemoryAcceptor<>(new AtomicReference<>(Decision.NONE), serverId, id, transactionId));
 
-        if (withDrops) {
+        if (Config.withDrops) {
             acceptorStream = acceptorStream
-                    .map(a -> new DropAcceptor<>(dropRate, a));
+                    .map(a -> new DropAcceptor<>(Config.dropRate, a));
         }
-        if (withTimeout) {
+        if (Config.withTimeout) {
             acceptorStream = acceptorStream
-                    .map(a -> new TimeoutAcceptor<>(timeout, a));
+                    .map(a -> new TimeoutAcceptor<>(Config.timeout, a));
         }
-        if (async) {
+        if (Config.async) {
             acceptorStream = acceptorStream
-                    .map(a -> new AsyncAcceptor<>(accexec, a));
+                    .map(a -> new AsyncAcceptor<>(Config.accexec, a));
         }
         return acceptorStream
                 .collect(
-                        Collectors.groupingBy(
-                                it -> counter.getAndIncrement() / (1 + nReplicas)
-                        )
+                        Collectors.toList()
                 );
     }
 

@@ -1,6 +1,8 @@
 package wtf.g4s8.examples.system;
 
+import wtf.g4s8.examples.configuration.TransactionTest;
 import wtf.g4s8.examples.spaxos.Acceptor;
+import wtf.g4s8.examples.system.storage.Storage;
 
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -17,8 +19,8 @@ public class AsyncResourceManager implements ResourceManager {
     }
 
     @Override
-    public void update(Patch patch) {
-        this.exec.execute(() -> this.origin.update(patch));
+    public void update(Patch patch, List<Acceptor<Decision>> acceptors) {
+        this.exec.execute(() -> this.origin.update(patch, acceptors));
     }
 
     @Override
@@ -27,13 +29,18 @@ public class AsyncResourceManager implements ResourceManager {
     }
 
     @Override
+    public void abort(String transactionId) {
+        this.exec.execute(() -> this.origin.abort(transactionId));
+    }
+
+    @Override
     public Integer id() {
         return this.origin.id();
     }
 
     @Override
-    public List<Acceptor<Decision>> acceptors() {
-        return this.origin.acceptors();
+    public List<Acceptor<Decision>> acceptors(String transactionId) {
+        return this.origin.acceptors(transactionId);
     }
 
     @Override

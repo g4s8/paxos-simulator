@@ -1,5 +1,9 @@
 package wtf.g4s8.examples.system;
 
+import wtf.g4s8.examples.spaxos.Acceptor;
+
+import java.util.List;
+
 public class Patch {
     final String uid;
     final int lastKnownValue;
