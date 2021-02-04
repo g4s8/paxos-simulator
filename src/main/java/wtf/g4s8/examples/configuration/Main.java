@@ -9,10 +9,11 @@ public class Main {
         Config.delay = 30;
         Config.nReplicas = 3;
         Config.withDrops = false;
-        Config.dropRate = 0;
+        Config.dropRate = 0.1;
         Config.withTimeout = false;
         Config.timeout = 0;
         Config.async = true;
+        Config.isRmUnstable = true;
         Config.accexec = Executors.newCachedThreadPool();
         TransactionTest.builder()
                 .nReplicas(3)

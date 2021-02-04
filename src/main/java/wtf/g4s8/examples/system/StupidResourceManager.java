@@ -9,6 +9,7 @@ import wtf.g4s8.examples.system.storage.Storage;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -21,6 +22,7 @@ import static wtf.g4s8.examples.system.Decision.PREPARE;
  * SafeResourceManager saves transaction data to stable storage before update
  */
 public class StupidResourceManager implements ResourceManager {
+    private static final Random RNG = new Random();
     final Integer id;
     final Storage storage;
 
@@ -42,7 +44,7 @@ public class StupidResourceManager implements ResourceManager {
         activeProps.put(patch.uid, decisionProposer);
         if(!storage.isLocked() && storage.value() == patch.lastKnownValue) {
                 storage.lock(patch.uid);
-                storage.saveActiveAcceptors(patch.uid, acceptors);;
+                storage.saveActiveAcceptors(patch.uid, acceptors);
                 storage.saveProposedValue(patch.uid, patch.newValue);
                 restartIf();
                 decisionProposer.propose(PREPARE);
@@ -100,7 +102,8 @@ public class StupidResourceManager implements ResourceManager {
     }
 
     private void restartIf() {
-        if (Config.isRmUnstable && !dead) {
+        if (Config.isRmUnstable && !dead && RNG.nextDouble() < Config.dropRate) {
+            System.out.printf("RM-%d restarting\n", id);
             shutDown();
             Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, Config.restartTime, TimeUnit.SECONDS);
 
