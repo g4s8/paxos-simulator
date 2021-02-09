@@ -25,6 +25,7 @@
 package wtf.g4s8.examples.spaxos;
 
 import wtf.g4s8.examples.system.Sync;
+import wtf.g4s8.examples.Log;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -43,6 +44,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     private final int proposerServerId;
     private final int parentServerId;
     private final String transactionId;
+    private final Log.Logger log;
 
     /**
      * Minimal proposal.
@@ -62,6 +64,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
         this.proposerServerId = proposerServerId;
         this.parentServerId = parentServerId;
         this.transactionId = transactionId;
+        this.log = Log.logger(this);
     }
 
     @Override
@@ -82,7 +85,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
         if (prop.compareTo(this.min) >= 0) {
             this.acc = this.min = prop;
             this.mem.set(value);
-            System.out.printf("[%s] ACCEPTOR(for %d on %d) accepting %s %s\n", transactionId, proposerServerId, parentServerId, prop, value);
+            log.logf("accepting %s %s",  prop, value);
             callback.accepted(prop, value);
         }
     }
@@ -91,8 +94,10 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     public void requestValue(Sync.Receiver<T> callback) {
         final T value = mem.get();
         if (value != null) {
-            System.out.printf("[%s] ACCEPTOR(for %d on %d) SENDING VOTE: %s\n", transactionId, proposerServerId, parentServerId, value);
             callback.receive(value);
         }
+    }
+    public String toString() {
+        return String.format("acceptor-(txn:%s;s:%s)", this.transactionId, this.parentServerId);
     }
 }

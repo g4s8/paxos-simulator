@@ -53,7 +53,8 @@ SOFTWARE.
               <finalName>spaxos</finalName>
               <archive>
                 <manifest>
-                  <mainClass>wtf.g4s8.examples.Main</mainClass>
+                  <!-- <mainClass>wtf.g4s8.examples.Main</mainClass> -->
+                  <mainClass>wtf.g4s8.examples.configuration.Main</mainClass>
                 </manifest>
               </archive>
               <descriptorRefs>

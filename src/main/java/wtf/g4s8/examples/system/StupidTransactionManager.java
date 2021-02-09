@@ -2,6 +2,7 @@ package wtf.g4s8.examples.system;
 
 import wtf.g4s8.examples.configuration.Config;
 import wtf.g4s8.examples.configuration.TransactionTest;
+import wtf.g4s8.examples.*;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -10,6 +11,7 @@ public class StupidTransactionManager implements TransactionManager{
 
     public final static ScheduledExecutorService POOL = Executors.newScheduledThreadPool(Config.nUpdaters * Config.nReplicas);
     private static final Random RNG = new Random();
+    private final Log.Logger log;
 
     private final int timeout;
     private final List<ResourceManager> replicas;
@@ -21,6 +23,7 @@ public class StupidTransactionManager implements TransactionManager{
         this.timeout = syncTimeOutInSeconds;
         this.sync = new ConcurrentHashMap<>();
         this.quorum = ((replicas.size() + 1)/ 2) + 1;
+        this.log = Log.logger(this);
     }
 
     @Override
@@ -39,18 +42,18 @@ public class StupidTransactionManager implements TransactionManager{
             POOL.schedule(() -> {
                 Decision decision = decision(uid);
                 if(Decision.PREPARE.equals(decision)) {
-                    System.out.printf("[%s] COMMITTING\n", patch.uid);
+                    log.logf("commiting patch `%s`", patch.uid);
                     commit(patch.uid);
                     TransactionTest.done.countDown();
                 } else {
-                    System.out.printf("[%s] ABORTING\n", patch.uid);
+                    log.logf("aborting patch `%s`", patch.uid);
                     abort(patch.uid);
                     if (nTries < Config.nRetries) {
                         POOL.schedule(() -> {
                             this.update(String.valueOf(TransactionTest.transactionId.getAndIncrement()), currentValue, proposedValue, nTries + 1);
                         }, RNG.nextInt(Config.retryUpdateMaxTimeOutInSeconds - Config.retryUpdateMinTimeOutInSeconds) + Config.retryUpdateMinTimeOutInSeconds, TimeUnit.SECONDS);
                     } else {
-                        System.out.printf("FAILED to update from %s to %s\n", patch.lastKnownValue, patch.newValue);
+                        log.logf("failed to update from %s to %s", patch.lastKnownValue, patch.newValue);
                         TransactionTest.done.countDown();
                     }
                 }
@@ -79,7 +82,7 @@ public class StupidTransactionManager implements TransactionManager{
         replicas.parallelStream().forEach(r -> {
             r.storage().activeAcceptors().getOrDefault(transactionId, new ArrayList<>()).forEach(a -> a.requestValue(value -> {
                 if (!Decision.NONE.equals(value)) {
-                    System.out.printf("[%s] VOTE RECEIVED: %s\n", transactionId, value);
+                    log.logf("txn `%s` received a vote: `%s`", transactionId, value);
                     sync.get(transactionId).get(r.id()).add(value);
                 }
             }));
@@ -97,6 +100,10 @@ public class StupidTransactionManager implements TransactionManager{
                                 .filter(d -> d.equals(Decision.PREPARE))
                                 .count() >= quorum)
                         ? Decision.PREPARE : Decision.NONE;
+    }
+
+    public String toString() {
+        return "TM";
     }
 }
 
