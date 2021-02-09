@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import static wtf.g4s8.examples.system.Decision.ABORT;
 import static wtf.g4s8.examples.system.Decision.PREPARE;
+import wtf.g4s8.examples.Log;
 
 /**
  * SafeResourceManager saves transaction data to stable storage before update
@@ -23,6 +24,7 @@ public class StupidResourceManager implements ResourceManager {
     private static final Random RNG = new Random();
     final Integer id;
     final Storage storage;
+    private final Log.Logger log;
 
     final ConcurrentHashMap<String, Proposer<Decision>> activeProps = new ConcurrentHashMap<>();
     private volatile boolean dead;
@@ -31,6 +33,7 @@ public class StupidResourceManager implements ResourceManager {
     public StupidResourceManager(int id) {
         this.id = id;
         storage = new InMemoryStorage();
+        log = Log.logger(this);
     }
 
     @Override
@@ -45,11 +48,11 @@ public class StupidResourceManager implements ResourceManager {
                 storage.saveActiveAcceptors(patch.uid, acceptors);
                 storage.saveProposedValue(patch.uid, patch.newValue);
                 restartIf();
-                System.out.printf("[%s] preparing on %d\n", patch.uid, id);
+                log.logf("preparing patch `%s`", patch.uid);
                 decisionProposer.propose(PREPARE);
                 restartIf();
         } else {
-            System.out.printf("[%s] aborted on %d\n", patch.uid, id);
+            log.logf("aborted patch `%s`", patch.uid);
             storage.saveActiveAcceptors(patch.uid, acceptors);
             restartIf();
             decisionProposer.propose(ABORT);
@@ -63,7 +66,7 @@ public class StupidResourceManager implements ResourceManager {
             return;
         }
         if (storage.isLockedBy(transactionId)) {
-            System.out.printf("[%s] committed on %d\n", transactionId, id);
+            log.logf("commited txn `%s`", transactionId);
             storage.updateValue(storage.proposedValue(transactionId));
             storage.flush(transactionId);
             storage.unlock();
@@ -81,7 +84,7 @@ public class StupidResourceManager implements ResourceManager {
         }
         storage.flush(transactionId);
         if (storage.isLockedBy(transactionId)) {
-            System.out.printf("[%s] aborted on %d\n", transactionId, id);
+            log.logf("aborted transaction `%s`", transactionId);
             storage.unlock();
         }
         if (activeProps.get(transactionId) != null) {
@@ -107,7 +110,7 @@ public class StupidResourceManager implements ResourceManager {
 
     private void restartIf() {
         if (!dead && RNG.nextDouble() < Config.rmCrashRate) {
-            System.out.printf("RM-%d restarting\n", id);
+            log.log("restarting");
             shutDown();
             Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, Config.rmRestartTimeOutInSeconds, TimeUnit.SECONDS);
 
@@ -128,5 +131,9 @@ public class StupidResourceManager implements ResourceManager {
         this.dead = true;
         activeProps.values().forEach(Proposer::kill);
         activeProps.clear();
+    }
+
+    public String toString() {
+        return String.format("RM-%d", this.id);
     }
 }
