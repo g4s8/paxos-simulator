@@ -1,12 +1,9 @@
 package wtf.g4s8.examples.configuration;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import wtf.g4s8.examples.spaxos.*;
 import wtf.g4s8.examples.system.*;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -16,28 +13,31 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-@Builder
-@AllArgsConstructor
 public class TransactionTest {
-    private final int nUpdaters;
-    private final int nReplicas;
-    private final ExecutorService accexec;
-    private final boolean withDrops;
-    private final double dropRate;
-    private final boolean withTimeout;
-    private final int timeout;
-    private final boolean async;
-    private final int syncDelay;
 
+    public static ExecutorService exec = Executors.newCachedThreadPool();
+    public static AtomicInteger transactionId = new AtomicInteger(1);
+    public static CountDownLatch done;
 
     public void test() throws Exception {
+        List<ResourceManager> resourceManagers = resourceManagerCluster();
         writeConcurrent(
-                nUpdaters,
+                Config.nUpdaters,
                 new StupidTransactionManager(
-                        syncDelay,
-                        resourceManagerCluster()
+                        Config.syncDelayInSeconds,
+                        resourceManagers
                 )
         );
+        done = new CountDownLatch(Config.nTransactions);
+        done.await();
+        exec.shutdown();
+        Proposer.EXEC_TIMEOUT.shutdown();
+        StupidTransactionManager.POOL.shutdown();
+        System.out.println("---TEST FINISHED---");
+        resourceManagers.forEach(replica -> {
+            System.out.printf("RM-%s value: %s\n", replica.id(), replica.storage().value().toString());
+        });
+        System.exit(0);
     }
 
 
@@ -45,14 +45,8 @@ public class TransactionTest {
         CountDownLatch cd = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(nUpdaters);
         ExecutorService exec = Executors.newCachedThreadPool();
-        List<String> transactionsID =
-                Stream.generate(UUID::randomUUID)
-                .map(UUID::toString)
-                .limit(nUpdaters)
-                .collect(Collectors.toList());
         for (int i = 0; i < nUpdaters; i++) {
             final int val = i;
-            final String uid = transactionsID.get(i);
             exec.submit(() -> {
                 try {
                     cd.await();
@@ -60,7 +54,7 @@ public class TransactionTest {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                tm.update(uid,0, val+10);
+                tm.update(String.valueOf(transactionId.getAndIncrement()),0, val+10);
                 done.countDown();
             });
         }
@@ -69,23 +63,23 @@ public class TransactionTest {
     }
 
     /**
-     * Creates {@link #nReplicas} ResourceManagers with Paxos instance connected to TM and all RMs.
+     * Creates {@link Config#nReplicas} ResourceManagers with Paxos instance connected to TM and all RMs.
      */
     private List<ResourceManager> resourceManagerCluster() {
-        Stream<ResourceManager> rmStream = IntStream.rangeClosed(1, nReplicas).mapToObj(
+        Stream<ResourceManager> rmStream = IntStream.rangeClosed(1, Config.nReplicas).mapToObj(
                 StupidResourceManager::new
         );
-        if (withDrops) {
+        if (Config.withDrops) {
             rmStream = rmStream
-                    .map(a -> new DropResourceManager(dropRate, a));
+                    .map(a -> new DropResourceManager(Config.dropRate, a));
         }
-        if (withTimeout) {
+        if (Config.withTimeout) {
             rmStream = rmStream
-                    .map(a -> new TimeoutResourceManager(timeout, a));
+                    .map(a -> new TimeoutResourceManager(Config.timeoutMilliseconds, a));
         }
-        if (async) {
+        if (Config.async) {
             rmStream = rmStream
-                    .map(a -> new AsyncResourceManager(accexec, a));
+                    .map(a -> new AsyncResourceManager(exec, a));
         }
         return rmStream.collect(Collectors.toList());
 
@@ -108,11 +102,11 @@ public class TransactionTest {
         }
         if (Config.withTimeout) {
             acceptorStream = acceptorStream
-                    .map(a -> new TimeoutAcceptor<>(Config.timeout, a));
+                    .map(a -> new TimeoutAcceptor<>(Config.timeoutMilliseconds, a));
         }
         if (Config.async) {
             acceptorStream = acceptorStream
-                    .map(a -> new AsyncAcceptor<>(Config.accexec, a));
+                    .map(a -> new AsyncAcceptor<>(exec, a));
         }
         return acceptorStream
                 .collect(

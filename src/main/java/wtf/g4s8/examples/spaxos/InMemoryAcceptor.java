@@ -40,8 +40,8 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
      * Memory storage.
      */
     private final AtomicReference<T> mem;
-    private final Integer proposerServerId;
-    private final Integer parentServerId;
+    private final int proposerServerId;
+    private final int parentServerId;
     private final String transactionId;
 
     /**
@@ -57,7 +57,7 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     /**
      * New in memory acceptor with provided memory.
      */
-    public InMemoryAcceptor(final AtomicReference<T> mem, Integer proposerServerId, Integer parentServerId, String transactionId) {
+    public InMemoryAcceptor(final AtomicReference<T> mem, int proposerServerId, int parentServerId, String transactionId) {
         this.mem = mem;
         this.proposerServerId = proposerServerId;
         this.parentServerId = parentServerId;

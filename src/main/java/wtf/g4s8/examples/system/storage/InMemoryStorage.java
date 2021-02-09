@@ -31,12 +31,12 @@ public class InMemoryStorage implements Storage {
     }
 
     @Override
-    public boolean isLocked() {
+    public synchronized boolean isLocked() {
         return !lockedBy.isEmpty();
     }
 
     @Override
-    public void lock(String uid) {
+    public synchronized void lock(String uid) {
         this.lockedBy = uid;
     }
 
@@ -51,7 +51,7 @@ public class InMemoryStorage implements Storage {
     }
 
     @Override
-    public boolean isLockedBy(String uid) {
+    public synchronized boolean isLockedBy(String uid) {
         return lockedBy.equals(uid);
     }
 
@@ -67,7 +67,7 @@ public class InMemoryStorage implements Storage {
     }
 
     @Override
-    public void unlock() {
+    public synchronized void unlock() {
         this.lockedBy = "";
     }
 

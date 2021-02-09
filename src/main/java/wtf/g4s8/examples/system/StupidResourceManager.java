@@ -7,11 +7,9 @@ import wtf.g4s8.examples.system.storage.InMemoryStorage;
 import wtf.g4s8.examples.system.storage.Storage;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -47,9 +45,11 @@ public class StupidResourceManager implements ResourceManager {
                 storage.saveActiveAcceptors(patch.uid, acceptors);
                 storage.saveProposedValue(patch.uid, patch.newValue);
                 restartIf();
+                System.out.printf("[%s] preparing on %d\n", patch.uid, id);
                 decisionProposer.propose(PREPARE);
                 restartIf();
         } else {
+            System.out.printf("[%s] aborted on %d\n", patch.uid, id);
             storage.saveActiveAcceptors(patch.uid, acceptors);
             restartIf();
             decisionProposer.propose(ABORT);
@@ -68,8 +68,10 @@ public class StupidResourceManager implements ResourceManager {
             storage.flush(transactionId);
             storage.unlock();
         }
-        activeProps.get(transactionId).kill();
-        activeProps.remove(transactionId);
+        if (activeProps.get(transactionId) != null) {
+            activeProps.get(transactionId).kill();
+            activeProps.remove(transactionId);
+        }
     }
 
     @Override
@@ -77,13 +79,15 @@ public class StupidResourceManager implements ResourceManager {
         if (dead) {
             return;
         }
-        System.out.printf("[%s] aborted on %d\n", transactionId, id);
         storage.flush(transactionId);
         if (storage.isLockedBy(transactionId)) {
+            System.out.printf("[%s] aborted on %d\n", transactionId, id);
             storage.unlock();
         }
-        activeProps.get(transactionId).kill();
-        activeProps.remove(transactionId);
+        if (activeProps.get(transactionId) != null) {
+            activeProps.get(transactionId).kill();
+            activeProps.remove(transactionId);
+        }
     }
 
     @Override
@@ -102,10 +106,10 @@ public class StupidResourceManager implements ResourceManager {
     }
 
     private void restartIf() {
-        if (Config.isRmUnstable && !dead && RNG.nextDouble() < Config.dropRate) {
+        if (!dead && RNG.nextDouble() < Config.rmCrashRate) {
             System.out.printf("RM-%d restarting\n", id);
             shutDown();
-            Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, Config.restartTime, TimeUnit.SECONDS);
+            Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, Config.rmRestartTimeOutInSeconds, TimeUnit.SECONDS);
 
         }
     }

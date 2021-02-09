@@ -52,7 +52,7 @@ import java.util.concurrent.*;
  */
 public final class Proposer<T> {
     private final String transactionId;
-    private volatile Boolean crashed;
+    private Boolean crashed;
     private static final Random RNG = new Random();
     public static final ScheduledExecutorService EXEC_TIMEOUT = Executors.newScheduledThreadPool(5);
 
@@ -97,7 +97,7 @@ public final class Proposer<T> {
         this.acceptors.parallelStream().forEach(
                 acc -> acc.prepare(next, callback)
         );
-        EXEC_TIMEOUT.schedule(callback::timeout, Config.delay + RNG.nextInt(Config.delay/6), TimeUnit.MILLISECONDS);
+        EXEC_TIMEOUT.schedule(callback::timeout, Config.paxosProposerTimeOutMilliseconds + RNG.nextInt(Config.paxosProposerTimeOutMilliseconds /6), TimeUnit.MILLISECONDS);
         return this.future;
     }
 
@@ -105,11 +105,11 @@ public final class Proposer<T> {
         return new Proposer<>(prop, this.transactionId, this.acceptors, this.future, this.crashed);
     }
 
-    public void kill() {
+    public synchronized void kill() {
         this.crashed = true;
     }
 
-    public boolean isDead() {
+    public synchronized boolean isDead() {
         return this.crashed;
     }
 
@@ -156,8 +156,12 @@ public final class Proposer<T> {
                 Log.d("[%s] prepare reject %s %s", this.proposer.transactionId, prop, value);
             }
             else if (!this.value.equals(value)) {
-                Log.d("[%s] can't accept: %s. %s is already accepted from %s, restart %s with other value: %s", this.proposer.transactionId, this.value, value, prop, this.prop, value);
-                this.proposer.restart(this.prop.update(this.max)).propose(value);
+                if (!this.done) {
+                    Log.d("[%s] can't accept: %s. %s is already accepted from %s", this.proposer.transactionId, this.value, value, prop);
+                    this.done = true;
+                    Log.d("[%s] restarting %s with other value: %s", this.proposer.transactionId, this.prop, value);
+                    this.proposer.restart(this.prop.update(this.max)).propose(value);
+                }
             } else {
                 this.cnt++;
             }
@@ -243,7 +247,6 @@ public final class Proposer<T> {
                 this.proposer.restart(this.prop.update(this.max)).propose(this.val);
             } else {
                 Log.d("[%s] propose completed %s", this.proposer.transactionId, this.prop);
-                //this.proposer.kill();
                 this.proposer.future.complete(this.val);
             }
         }
