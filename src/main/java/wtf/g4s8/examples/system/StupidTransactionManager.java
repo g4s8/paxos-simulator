@@ -42,11 +42,11 @@ public class StupidTransactionManager implements TransactionManager{
             POOL.schedule(() -> {
                 Decision decision = decision(uid);
                 if(Decision.PREPARE.equals(decision)) {
-                    log.logf("commiting patch `%s`", patch.uid);
+                    log.logf("commiting txn `%s`", patch.uid);
                     commit(patch.uid);
                     TransactionTest.done.countDown();
                 } else {
-                    log.logf("aborting patch `%s`", patch.uid);
+                    log.logf("aborting txn `%s`", patch.uid);
                     abort(patch.uid);
                     if (nTries < Config.nRetries) {
                         POOL.schedule(() -> {
@@ -80,9 +80,9 @@ public class StupidTransactionManager implements TransactionManager{
                 );
         replicas.parallelStream().forEach(ac -> sync.get(transactionId).put(ac.id(), Collections.synchronizedList(new ArrayList<>())));
         replicas.parallelStream().forEach(r -> {
-            r.storage().activeAcceptors().getOrDefault(transactionId, new ArrayList<>()).forEach(a -> a.requestValue(value -> {
+            r.storage().activeAcceptors().getOrDefault(transactionId, new ArrayList<>()).forEach(a -> a.requestValue((value, meta) -> {
                 if (!Decision.NONE.equals(value)) {
-                    log.logf("txn `%s` received a vote: `%s`", transactionId, value);
+                    log.logf("txn `%s` received a vote: `%s` from %s", transactionId, value, meta);
                     sync.get(transactionId).get(r.id()).add(value);
                 }
             }));

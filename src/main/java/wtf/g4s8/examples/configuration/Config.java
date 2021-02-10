@@ -60,5 +60,8 @@ public class Config {
      * Upper border.
      */
     public static int retryUpdateMaxTimeOutInSeconds;
-
+    /**
+     * Whether to show thread name in logs.
+     */
+    public static boolean traceThreads;
 }

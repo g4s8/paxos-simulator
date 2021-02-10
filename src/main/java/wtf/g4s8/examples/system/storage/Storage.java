@@ -16,6 +16,8 @@ public interface Storage {
 
     boolean isLocked();
 
+    String holder();
+
     void lock(String uid);
 
     void saveProposedValue(String transactionId, int newValue);

@@ -82,7 +82,7 @@ public interface Acceptor<T> extends Sync<T> {
          *
          * @param prop Proposal for prepare call
          */
-        void promise(Proposal prop);
+        void promise(Proposal prop, String metadata);
 
 
         /**
@@ -90,10 +90,10 @@ public interface Acceptor<T> extends Sync<T> {
          * proposals less than some value.
          *
          */
-        void promise(Proposal prop, T val);
+        void promise(Proposal prop, T val, String metadata);
     }
 
     interface AcceptCallback<T> {
-        void accepted(Proposal prop, T value);
+        void accepted(Proposal prop, T value, String metadata);
     }
 }

@@ -36,6 +36,11 @@ public class InMemoryStorage implements Storage {
     }
 
     @Override
+    public String holder() {
+        return lockedBy;
+    }
+
+    @Override
     public synchronized void lock(String uid) {
         this.lockedBy = uid;
     }

@@ -48,11 +48,15 @@ public class StupidResourceManager implements ResourceManager {
                 storage.saveActiveAcceptors(patch.uid, acceptors);
                 storage.saveProposedValue(patch.uid, patch.newValue);
                 restartIf();
-                log.logf("preparing patch `%s`", patch.uid);
+                log.logf("preparing %s", patch);
                 decisionProposer.propose(PREPARE);
                 restartIf();
         } else {
-            log.logf("aborted patch `%s`", patch.uid);
+            if (storage().isLocked()) {
+                log.logf("aborted %s. Storage is locked by tnx `%s`", patch, storage.holder());
+            } else {
+                log.logf("aborted %s. Patch expects that storage has value `%s`, but actual is `%s`", patch, patch.lastKnownValue, storage.value());
+            }
             storage.saveActiveAcceptors(patch.uid, acceptors);
             restartIf();
             decisionProposer.propose(ABORT);
@@ -66,7 +70,7 @@ public class StupidResourceManager implements ResourceManager {
             return;
         }
         if (storage.isLockedBy(transactionId)) {
-            log.logf("commited txn `%s`", transactionId);
+            log.logf("committed txn `%s`", transactionId);
             storage.updateValue(storage.proposedValue(transactionId));
             storage.flush(transactionId);
             storage.unlock();

@@ -7,6 +7,6 @@ public interface Sync<T> {
     void requestValue(Receiver<T> callback);
 
     interface Receiver<T> {
-        void receive(T value);
+        void receive(T value, String metadata);
     }
 }

@@ -94,7 +94,7 @@ public class TransactionTest {
     public static List<Acceptor<Decision>> acceptors(int serverId, String transactionId) {
         Stream<Acceptor<Decision>> acceptorStream = IntStream.rangeClosed(0, Config.nReplicas)
                 .limit(Config.nReplicas + 1)
-                .mapToObj(id -> new InMemoryAcceptor<>(new AtomicReference<>(Decision.NONE), serverId, id, transactionId));
+                .mapToObj(id -> new InMemoryAcceptor<>(new AtomicReference<>(Decision.NONE), id, transactionId));
 
         if (Config.withDrops) {
             acceptorStream = acceptorStream

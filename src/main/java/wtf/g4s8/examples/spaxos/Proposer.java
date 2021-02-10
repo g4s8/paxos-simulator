@@ -55,11 +55,13 @@ public final class Proposer<T> {
     private Boolean crashed;
     private static final Random RNG = new Random();
     public static final ScheduledExecutorService EXEC_TIMEOUT = Executors.newScheduledThreadPool(5);
+    private final Log.Logger log;
 
     /**
      * Proposer id for logging.
      */
 
+    private int serverId;
     /**
      * Current proposal.
      */
@@ -76,15 +78,17 @@ public final class Proposer<T> {
      * New proposer with server id and list of acceptors.
      */
     public Proposer(final int server, final String transactionId, final List<? extends Acceptor<T>> acc) {
-        this(Proposal.init(server), transactionId, acc, new CompletableFuture<>(), false);
+        this(server, Proposal.init(server), transactionId, acc, new CompletableFuture<>(), false);
     }
 
-    private Proposer(final Proposal prop, final String transactionId, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future, Boolean crashed) {
+    private Proposer(final int serverId, final Proposal prop, final String transactionId, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future, Boolean crashed) {
+        this.serverId = serverId;
         this.prop = prop;
         this.acceptors = acceptors;
         this.future = future;
         this.transactionId = transactionId;
         this.crashed = crashed;
+        this.log = Log.logger(this);
     }
 
     public Future<T> propose(final T value) {
@@ -92,7 +96,7 @@ public final class Proposer<T> {
             return null;
         }
         final Proposal next = this.prop.next();
-        Log.d("[%s] proposing %s : %s", transactionId, next, value);
+        log.logf("propose %s `%s`", next, value);
         final QuorumPrepared<T> callback = new QuorumPrepared<>(next, value, this.acceptors, this);
         this.acceptors.parallelStream().forEach(
                 acc -> acc.prepare(next, callback)
@@ -102,7 +106,7 @@ public final class Proposer<T> {
     }
 
     private Proposer<T> restart(Proposal prop) {
-        return new Proposer<>(prop, this.transactionId, this.acceptors, this.future, this.crashed);
+        return new Proposer<>(this.serverId, prop, this.transactionId, this.acceptors, this.future, this.crashed);
     }
 
     public synchronized void kill() {
@@ -113,12 +117,18 @@ public final class Proposer<T> {
         return this.crashed;
     }
 
+    @Override
+    public String toString() {
+        return String.format("proposer-(txn:%s, s:%s)", this.transactionId, this.serverId);
+    }
+
 
     private static final class QuorumPrepared<T> implements Acceptor.PrepareCallback<T> {
 
         private final List<? extends Acceptor<T>> acceptors;
         private final Proposal prop;
         private final Proposer<T> proposer;
+        private final Log.Logger log;
 
         private volatile Proposal max;
         private volatile boolean done;
@@ -131,38 +141,40 @@ public final class Proposer<T> {
             this.max = prop;
             this.prop = prop;
             this.proposer = proposer;
+            this.log = Log.logger(proposer);
         }
 
         @Override
-        public synchronized void promise(Proposal prop) {
+        public synchronized void promise(Proposal prop, String metadata) {
             if (this.proposer.isDead()) {
                 return;
             }
             if (!done) {
-                Log.d("[%s] promise %s, cnt=%d", this.proposer.transactionId, prop, this.cnt + 1);
+                log.logf("promise for %s received from %s, cnt=%d",  prop, metadata, this.cnt + 1);
             }
             this.cnt++;
             next(false);
         }
 
         @Override
-        public synchronized void promise(final Proposal prop, final T value) {
+        public synchronized void promise(final Proposal prop, final T value, String metadata) {
             if (this.proposer.isDead()) {
                 return;
             }
             if (prop.compareTo(this.max) > 0) {
                 this.max = prop;
                 this.value = value;
-                Log.d("[%s] prepare reject %s %s", this.proposer.transactionId, prop, value);
+                log.logf("prepare rejected by %s. Already accepted value `%s` from higher proposer `%s`", metadata, value, prop);
             }
             else if (!this.value.equals(value)) {
                 if (!this.done) {
-                    Log.d("[%s] can't accept: %s. %s is already accepted from %s", this.proposer.transactionId, this.value, value, prop);
+                    log.logf("proposed value: `%s` can't be accepted by %s. Value: `%s` is already accepted from %s", this.value, metadata, value, prop);
                     this.done = true;
-                    Log.d("[%s] restarting %s with other value: %s", this.proposer.transactionId, this.prop, value);
+                    log.logf("restarting %s with other value: %s", this.prop, value);
                     this.proposer.restart(this.prop.update(this.max)).propose(value);
                 }
             } else {
+                log.logf("promise for %s received from %s, cnt=%d",  prop, metadata, this.cnt + 1);
                 this.cnt++;
             }
             next(false);
@@ -172,7 +184,7 @@ public final class Proposer<T> {
             if (this.done || this.proposer.isDead()) {
                 return;
             }
-            Log.d("[%s] prepare timeout %s %s", proposer.transactionId, prop, value);
+            log.logf("prepare timeout %s %s", prop, value);
             next(true);
         }
 
@@ -184,7 +196,7 @@ public final class Proposer<T> {
             final int quorum = this.acceptors.size() / 2 + 1;
             if (this.cnt >= quorum) {
                 this.done = true;
-                Log.d("[%s] prepared by %d acceptors, sending accept %s : %s", this.proposer.transactionId, quorum, this.prop, this.value);
+                log.logf("prepared by %d acceptors, sending accept %s `%s`", quorum, this.prop, this.value);
                 final AcceptCallback<T> callback = new AcceptCallback<>(
                         this.proposer, this.prop, quorum, this.value
                 );
@@ -194,7 +206,7 @@ public final class Proposer<T> {
                 );
             } else if (force) {
                 this.done = true;
-                Log.d("[%s] prepared restart by timeout %s: %s", this.proposer.transactionId, this.prop, this.value);
+                log.logf("prepared restart by timeout %s: %s", this.prop, this.value);
                 this.proposer.restart(this.prop).propose(this.value);
             }
         }
@@ -206,6 +218,7 @@ public final class Proposer<T> {
         private final Proposal prop;
         private final int quorum;
         private final T val;
+        private final Log.Logger log;
 
         private volatile int cnt;
         private volatile boolean done;
@@ -217,14 +230,15 @@ public final class Proposer<T> {
             this.quorum = quorum;
             this.max = prop;
             this.val = val;
+            this.log = Log.logger(proposer);
         }
 
         @Override
-        public synchronized void accepted(Proposal prop, T value) {
+        public synchronized void accepted(Proposal prop, T value, String metadata) {
             if (this.proposer.isDead()) {
                 return;
             }
-            Log.d("[%s] accepted %s : %s", proposer.transactionId, prop, value);
+            log.logf("%s accepted %s `%s`",metadata, prop, value);
             this.cnt++;
             next(false);
         }
@@ -243,10 +257,10 @@ public final class Proposer<T> {
             this.done = true;
             final boolean rejected = this.cnt < quorum;
             if (rejected) {
-                Log.d("[%s] propose rejected, restarting %s", this.proposer.transactionId, this.prop);
+                log.logf("propose rejected, restarting %s", this.prop);
                 this.proposer.restart(this.prop.update(this.max)).propose(this.val);
             } else {
-                Log.d("[%s] propose completed %s", this.proposer.transactionId, this.prop);
+                log.logf("propose completed %s", this.prop);
                 this.proposer.future.complete(this.val);
             }
         }

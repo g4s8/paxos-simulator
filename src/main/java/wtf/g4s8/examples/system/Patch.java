@@ -1,8 +1,5 @@
 package wtf.g4s8.examples.system;
 
-import wtf.g4s8.examples.spaxos.Acceptor;
-
-import java.util.List;
 
 public class Patch {
     final String uid;
@@ -14,5 +11,10 @@ public class Patch {
         this.uid = uid;
         this.lastKnownValue = lastKnownValue;
         this.newValue = newValue;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("patch-(txn:%s, old value: `%s`, new value: `%s`)", this.uid, this.lastKnownValue, this.newValue);
     }
 }
