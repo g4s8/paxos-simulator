@@ -24,6 +24,7 @@
 
 package wtf.g4s8.examples;
 
+import wtf.g4s8.examples.configuration.Config;
 import wtf.g4s8.examples.spaxos.*;
 
 import java.util.ArrayList;
@@ -31,7 +32,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,12 +49,13 @@ public final class Main {
     public static void main(final String... args) throws Exception {
         final int nProp = Integer.parseInt(args[0]);
         final int nAcc = Integer.parseInt(args[1]);
+        Config.paxosProposerTimeOutMilliseconds = 300;
 
         List<AtomicReference<String>> memory = Stream.generate(() -> new AtomicReference<>(""))
                 .limit(nAcc).collect(Collectors.toList());
         final ExecutorService accexec = Executors.newCachedThreadPool();
         List<Acceptor<String>> acceptors = memory.stream()
-                .map(InMemoryAcceptor::new)
+                .map(mem -> new InMemoryAcceptor<>(mem, 0, "single-paxos"))
                 .map(a -> new DropAcceptor<>(0.3, a))
                 .map(a -> new TimeoutAcceptor<>(200, a))
                 .map(a -> new AsyncAcceptor<>(accexec, a))
@@ -109,7 +110,7 @@ public final class Main {
         }
 
         public Proposer<T> get() {
-            return new Proposer<>(this.server.incrementAndGet(), this.acceptors);
+            return new Proposer<>(this.server.incrementAndGet(), "single-paxos", this.acceptors);
         }
     }
 }

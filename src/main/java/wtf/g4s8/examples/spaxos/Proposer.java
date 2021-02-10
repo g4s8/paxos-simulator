@@ -25,6 +25,7 @@
 package wtf.g4s8.examples.spaxos;
 
 import wtf.g4s8.examples.Log;
+import wtf.g4s8.examples.configuration.Config;
 
 import java.util.List;
 import java.util.Random;
@@ -50,13 +51,17 @@ import java.util.concurrent.*;
  * @since 1.0
  */
 public final class Proposer<T> {
+    private final String transactionId;
+    private Boolean crashed;
     private static final Random RNG = new Random();
     public static final ScheduledExecutorService EXEC_TIMEOUT = Executors.newScheduledThreadPool(5);
+    private final Log.Logger log;
 
     /**
      * Proposer id for logging.
      */
 
+    private int serverId;
     /**
      * Current proposal.
      */
@@ -72,29 +77,49 @@ public final class Proposer<T> {
     /**
      * New proposer with server id and list of acceptors.
      */
-    public Proposer(final int server, final List<? extends Acceptor<T>> acc) {
-        this(Proposal.init(server), acc, new CompletableFuture<>());
+    public Proposer(final int server, final String transactionId, final List<? extends Acceptor<T>> acc) {
+        this(server, Proposal.init(server), transactionId, acc, new CompletableFuture<>(), false);
     }
 
-    private Proposer(final Proposal prop, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future) {
+    private Proposer(final int serverId, final Proposal prop, final String transactionId, final List<? extends Acceptor<T>> acceptors, final CompletableFuture<T> future, Boolean crashed) {
+        this.serverId = serverId;
         this.prop = prop;
         this.acceptors = acceptors;
         this.future = future;
+        this.transactionId = transactionId;
+        this.crashed = crashed;
+        this.log = Log.logger(this);
     }
 
     public Future<T> propose(final T value) {
+        if (crashed) {
+            return null;
+        }
         final Proposal next = this.prop.next();
-        Log.d("proposing %s : %s", next, value);
+        log.logf("propose %s `%s`", next, value);
         final QuorumPrepared<T> callback = new QuorumPrepared<>(next, value, this.acceptors, this);
         this.acceptors.parallelStream().forEach(
                 acc -> acc.prepare(next, callback)
         );
-        EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+        EXEC_TIMEOUT.schedule(callback::timeout, Config.paxosProposerTimeOutMilliseconds + RNG.nextInt(Config.paxosProposerTimeOutMilliseconds /6), TimeUnit.MILLISECONDS);
         return this.future;
     }
 
     private Proposer<T> restart(Proposal prop) {
-        return new Proposer<>(prop, this.acceptors, this.future);
+        return new Proposer<>(this.serverId, prop, this.transactionId, this.acceptors, this.future, this.crashed);
+    }
+
+    public synchronized void kill() {
+        this.crashed = true;
+    }
+
+    public synchronized boolean isDead() {
+        return this.crashed;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("proposer-(txn:%s, s:%s)", this.transactionId, this.serverId);
     }
 
 
@@ -103,6 +128,7 @@ public final class Proposer<T> {
         private final List<? extends Acceptor<T>> acceptors;
         private final Proposal prop;
         private final Proposer<T> proposer;
+        private final Log.Logger log;
 
         private volatile Proposal max;
         private volatile boolean done;
@@ -115,52 +141,72 @@ public final class Proposer<T> {
             this.max = prop;
             this.prop = prop;
             this.proposer = proposer;
+            this.log = Log.logger(proposer);
         }
 
         @Override
-        public synchronized void promise(Proposal prop) {
+        public synchronized void promise(Proposal prop, String metadata) {
+            if (this.proposer.isDead()) {
+                return;
+            }
             if (!done) {
-                Log.d("promise %s, cnt=%d", prop, this.cnt);
+                log.logf("promise for %s received from %s, cnt=%d",  prop, metadata, this.cnt + 1);
             }
             this.cnt++;
             next(false);
         }
 
         @Override
-        public synchronized void promise(final Proposal prop, final T value) {
+        public synchronized void promise(final Proposal prop, final T value, String metadata) {
+            if (this.proposer.isDead()) {
+                return;
+            }
             if (prop.compareTo(this.max) > 0) {
                 this.max = prop;
                 this.value = value;
-                Log.d("prepare reject %s %s", prop, value);
+                log.logf("prepare rejected by %s. Already accepted value `%s` from higher proposer `%s`", metadata, value, prop);
             }
-            this.cnt++;
+            else if (!this.value.equals(value)) {
+                if (!this.done) {
+                    log.logf("proposed value: `%s` can't be accepted by %s. Value: `%s` is already accepted from %s", this.value, metadata, value, prop);
+                    this.done = true;
+                    log.logf("restarting %s with other value: %s", this.prop, value);
+                    this.proposer.restart(this.prop.update(this.max)).propose(value);
+                }
+            } else {
+                log.logf("promise for %s received from %s, cnt=%d",  prop, metadata, this.cnt + 1);
+                this.cnt++;
+            }
             next(false);
         }
 
         void timeout() {
-            Log.d("prepare timeout %s %s", prop, value);
+            if (this.done || this.proposer.isDead()) {
+                return;
+            }
+            log.logf("prepare timeout %s %s", prop, value);
             next(true);
         }
 
         private synchronized void next(boolean force) {
-            if (this.done) {
+            if (this.done || this.proposer.isDead()) {
                 return;
             }
 
             final int quorum = this.acceptors.size() / 2 + 1;
             if (this.cnt >= quorum) {
                 this.done = true;
-                Log.d("prepared by %d acceptors, sending accept %s : %s", quorum, this.prop, this.value);
+                log.logf("prepared by %d acceptors, sending accept %s `%s`", quorum, this.prop, this.value);
                 final AcceptCallback<T> callback = new AcceptCallback<>(
                         this.proposer, this.prop, quorum, this.value
                 );
-                EXEC_TIMEOUT.schedule(callback::timeout, 300 + RNG.nextInt(50), TimeUnit.MILLISECONDS);
+                EXEC_TIMEOUT.schedule(callback::timeout, 3000 + RNG.nextInt(500), TimeUnit.MILLISECONDS);
                 this.acceptors.parallelStream().forEach(
                         acc -> acc.accept(this.prop, this.value, callback)
                 );
             } else if (force) {
                 this.done = true;
-                Log.d("prepared restart by timeout", quorum, this.prop, this.value);
+                log.logf("prepared restart by timeout %s: %s", this.prop, this.value);
                 this.proposer.restart(this.prop).propose(this.value);
             }
         }
@@ -172,6 +218,7 @@ public final class Proposer<T> {
         private final Proposal prop;
         private final int quorum;
         private final T val;
+        private final Log.Logger log;
 
         private volatile int cnt;
         private volatile boolean done;
@@ -183,11 +230,15 @@ public final class Proposer<T> {
             this.quorum = quorum;
             this.max = prop;
             this.val = val;
+            this.log = Log.logger(proposer);
         }
 
         @Override
-        public synchronized void accepted(Proposal prop, T value) {
-            Log.d("accepted %s : %s", prop, value);
+        public synchronized void accepted(Proposal prop, T value, String metadata) {
+            if (this.proposer.isDead()) {
+                return;
+            }
+            log.logf("%s accepted %s `%s`",metadata, prop, value);
             this.cnt++;
             next(false);
         }
@@ -197,7 +248,7 @@ public final class Proposer<T> {
         }
 
         private synchronized void next(boolean force) {
-            if (this.done) {
+            if (this.done || this.proposer.isDead()) {
                 return;
             }
             if (this.cnt < this.quorum && !force) {
@@ -206,10 +257,10 @@ public final class Proposer<T> {
             this.done = true;
             final boolean rejected = this.cnt < quorum;
             if (rejected) {
-                Log.d("propose rejected, restarting");
+                log.logf("propose rejected, restarting %s", this.prop);
                 this.proposer.restart(this.prop.update(this.max)).propose(this.val);
             } else {
-                Log.d("propose completed");
+                log.logf("propose completed %s", this.prop);
                 this.proposer.future.complete(this.val);
             }
         }

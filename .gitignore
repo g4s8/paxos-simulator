@@ -27,3 +27,4 @@ target/**
 .settings/**
 spaxos.iml
 .idea/**
+.factorypath

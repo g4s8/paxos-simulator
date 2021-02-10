@@ -24,6 +24,9 @@
 
 package wtf.g4s8.examples.spaxos;
 
+import wtf.g4s8.examples.system.Sync;
+import wtf.g4s8.examples.Log;
+
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -38,6 +41,9 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
      * Memory storage.
      */
     private final AtomicReference<T> mem;
+    private final int parentServerId;
+    private final String transactionId;
+    private final Log.Logger log;
 
     /**
      * Minimal proposal.
@@ -52,8 +58,11 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
     /**
      * New in memory acceptor with provided memory.
      */
-    public InMemoryAcceptor(final AtomicReference<T> mem) {
+    public InMemoryAcceptor(final AtomicReference<T> mem, int parentServerId, String transactionId) {
         this.mem = mem;
+        this.parentServerId = parentServerId;
+        this.transactionId = transactionId;
+        this.log = Log.logger(this);
     }
 
     @Override
@@ -62,9 +71,11 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
             return;
         }
         if (this.acc.compareTo(Proposal.ZERO) > 0) {
-            callback.promise(this.acc, mem.get());
+            callback.promise(this.acc, mem.get(), this.toString());
         } else {
-            callback.promise(prop);
+            this.min = prop;
+            log.logf("promising %s",  prop);
+            callback.promise(prop, this.toString());
         }
     }
 
@@ -73,7 +84,20 @@ public final class InMemoryAcceptor<T> implements Acceptor<T> {
         if (prop.compareTo(this.min) >= 0) {
             this.acc = this.min = prop;
             this.mem.set(value);
-            callback.accepted(prop, value);
+            log.logf("accepting %s `%s`",  prop, value);
+            callback.accepted(prop, value, this.toString());
         }
+    }
+
+    @Override
+    public void requestValue(Sync.Receiver<T> callback) {
+        final T value = mem.get();
+        log.logf("asked for value, has `%s`", value);
+        if (value != null) {
+            callback.receive(value, this.toString());
+        }
+    }
+    public String toString() {
+        return String.format("acceptor-(txn:%s, s:%s)", this.transactionId, this.parentServerId);
     }
 }

@@ -92,7 +92,7 @@ public final class Proposal implements Comparable<Proposal> {
 
     @Override
     public String toString() {
-        return String.format("proposal(%d, %d)", this.number, this.server);
+        return String.format("proposal(bal:%d, s:%d)", this.number, this.server);
     }
 
     public static Proposal init(final int server) {

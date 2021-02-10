@@ -24,7 +24,7 @@
 
 package wtf.g4s8.examples.spaxos;
 
-import java.util.Comparator;
+import wtf.g4s8.examples.system.Sync;
 
 /**
  * Paxos acceptor.
@@ -44,7 +44,8 @@ import java.util.Comparator;
  *
  * @since 1.0
  */
-public interface Acceptor<T> {
+public interface Acceptor<T> extends Sync<T> {
+
 
     /**
      * Prepare - first phase of accepting value.
@@ -81,7 +82,7 @@ public interface Acceptor<T> {
          *
          * @param prop Proposal for prepare call
          */
-        void promise(Proposal prop);
+        void promise(Proposal prop, String metadata);
 
 
         /**
@@ -89,10 +90,10 @@ public interface Acceptor<T> {
          * proposals less than some value.
          *
          */
-        void promise(Proposal prop, T val);
+        void promise(Proposal prop, T val, String metadata);
     }
 
     interface AcceptCallback<T> {
-        void accepted(Proposal prop, T value);
+        void accepted(Proposal prop, T value, String metadata);
     }
 }
