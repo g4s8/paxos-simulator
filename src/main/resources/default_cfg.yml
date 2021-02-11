@@ -1,0 +1,16 @@
+paxosProposerTimeOutMilliseconds : 300
+nReplicas : 3
+nUpdaters : 1
+nTransactions : 1
+withDrops : false
+dropRate : 0.1
+withTimeout : false
+timeoutMilliseconds : 0
+async : true
+rmCrashRate : 0
+syncDelayInSeconds : 5
+nRetries : 1
+retryUpdateMinTimeOutInSeconds : 0
+retryUpdateMaxTimeOutInSeconds : 20
+rmRestartTimeOutInSeconds : 2
+traceThreads : false

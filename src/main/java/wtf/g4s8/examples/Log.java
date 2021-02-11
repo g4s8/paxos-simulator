@@ -1,6 +1,7 @@
 package wtf.g4s8.examples;
 
-import wtf.g4s8.examples.configuration.Config;
+
+import static wtf.g4s8.examples.configuration.Config.cfg;
 
 public class Log {
 
@@ -9,7 +10,7 @@ public class Log {
         void logf(String fmt, Object... args);
     }
 
-    public static final Logger DEFAULT = Config.traceThreads ?
+    public static final Logger DEFAULT = cfg.traceThreads ?
             new Logger() {
                 public void log(String msg) {
                     System.out.printf("[t:%s] %s\n", Thread.currentThread().getName(), msg);
@@ -59,7 +60,7 @@ public class Log {
     }
 
     public static Logger logger(Object source) {
-        return Config.traceThreads ?
+        return cfg.traceThreads ?
                 new PrefixedTx(source.toString())
                 :
                 new Prefixed(source.toString());

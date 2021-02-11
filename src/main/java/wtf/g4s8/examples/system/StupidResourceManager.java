@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import static wtf.g4s8.examples.configuration.Config.cfg;
 import static wtf.g4s8.examples.system.Decision.ABORT;
 import static wtf.g4s8.examples.system.Decision.PREPARE;
 import wtf.g4s8.examples.Log;
@@ -113,10 +114,10 @@ public class StupidResourceManager implements ResourceManager {
     }
 
     private void restartIf() {
-        if (!dead && RNG.nextDouble() < Config.rmCrashRate) {
+        if (!dead && RNG.nextDouble() < cfg.rmCrashRate) {
             log.log("restarting");
             shutDown();
-            Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, Config.rmRestartTimeOutInSeconds, TimeUnit.SECONDS);
+            Executors.newSingleThreadScheduledExecutor().schedule(this::startUp, cfg.rmRestartTimeOutInSeconds, TimeUnit.SECONDS);
 
         }
     }

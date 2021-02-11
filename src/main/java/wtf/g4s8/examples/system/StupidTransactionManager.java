@@ -1,15 +1,16 @@
 package wtf.g4s8.examples.system;
 
-import wtf.g4s8.examples.configuration.Config;
 import wtf.g4s8.examples.configuration.TransactionTest;
 import wtf.g4s8.examples.*;
 
 import java.util.*;
 import java.util.concurrent.*;
 
+import static wtf.g4s8.examples.configuration.Config.cfg;
+
 public class StupidTransactionManager implements TransactionManager{
 
-    public final static ScheduledExecutorService POOL = Executors.newScheduledThreadPool(Config.nUpdaters * Config.nReplicas);
+    public final static ScheduledExecutorService POOL = Executors.newScheduledThreadPool(cfg.nUpdaters * cfg.nReplicas);
     private static final Random RNG = new Random();
     private final Log.Logger log;
 
@@ -48,10 +49,10 @@ public class StupidTransactionManager implements TransactionManager{
                 } else {
                     log.logf("aborting txn `%s`", patch.uid);
                     abort(patch.uid);
-                    if (nTries < Config.nRetries) {
+                    if (nTries < cfg.nRetries) {
                         POOL.schedule(() -> {
                             this.update(String.valueOf(TransactionTest.transactionId.getAndIncrement()), currentValue, proposedValue, nTries + 1);
-                        }, RNG.nextInt(Config.retryUpdateMaxTimeOutInSeconds - Config.retryUpdateMinTimeOutInSeconds) + Config.retryUpdateMinTimeOutInSeconds, TimeUnit.SECONDS);
+                        }, RNG.nextInt(cfg.retryUpdateMaxTimeOutInSeconds - cfg.retryUpdateMinTimeOutInSeconds) + cfg.retryUpdateMinTimeOutInSeconds, TimeUnit.SECONDS);
                     } else {
                         log.logf("failed to update from %s to %s", patch.lastKnownValue, patch.newValue);
                         TransactionTest.done.countDown();
