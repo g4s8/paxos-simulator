@@ -36,7 +36,7 @@ public class StupidTransactionManager implements TransactionManager{
         Patch patch = new Patch(uid, currentValue, proposedValue);
 
         for (ResourceManager rm : replicas) {
-            rm.update(patch, TransactionTest.acceptors(rm.id(), uid));
+            rm.prepare(patch, TransactionTest.acceptors(rm.id(), uid));
         }
         POOL.schedule(() -> {
             sync(uid);

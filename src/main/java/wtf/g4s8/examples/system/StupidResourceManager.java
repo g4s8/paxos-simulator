@@ -38,7 +38,7 @@ public class StupidResourceManager implements ResourceManager {
     }
 
     @Override
-    public void update(Patch patch, List<Acceptor<Decision>> acceptors) {
+    public void prepare(Patch patch, List<Acceptor<Decision>> acceptors) {
         if (dead) {
             return;
         }
