@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.*;
 
+import static wtf.g4s8.examples.configuration.Config.cfg;
+
 /**
  * Paxos proposer.
  * <p>
@@ -101,7 +103,7 @@ public final class Proposer<T> {
         this.acceptors.parallelStream().forEach(
                 acc -> acc.prepare(next, callback)
         );
-        EXEC_TIMEOUT.schedule(callback::timeout, Config.paxosProposerTimeOutMilliseconds + RNG.nextInt(Config.paxosProposerTimeOutMilliseconds /6), TimeUnit.MILLISECONDS);
+        EXEC_TIMEOUT.schedule(callback::timeout, cfg.paxosProposerTimeOutMilliseconds + RNG.nextInt(cfg.paxosProposerTimeOutMilliseconds /6), TimeUnit.MILLISECONDS);
         return this.future;
     }
 

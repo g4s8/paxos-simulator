@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static wtf.g4s8.examples.configuration.Config.cfg;
+
 public class TransactionTest {
 
     public static ExecutorService exec = Executors.newCachedThreadPool();
@@ -22,17 +24,18 @@ public class TransactionTest {
     public void test() throws Exception {
         List<ResourceManager> resourceManagers = resourceManagerCluster();
         writeConcurrent(
-                Config.nUpdaters,
+                cfg.nUpdaters,
                 new StupidTransactionManager(
-                        Config.syncDelayInSeconds,
+                        cfg.syncDelayInSeconds,
                         resourceManagers
                 )
         );
-        done = new CountDownLatch(Config.nTransactions);
+        done = new CountDownLatch(cfg.nTransactions);
         done.await();
-        exec.shutdown();
         Proposer.EXEC_TIMEOUT.shutdown();
         StupidTransactionManager.POOL.shutdown();
+        Thread.sleep(cfg.timeoutMilliseconds + 100);
+        exec.shutdown();
         System.out.println("---TEST FINISHED---");
         resourceManagers.forEach(replica -> {
             System.out.printf("RM-%s value: %s\n", replica.id(), replica.storage().value().toString());
@@ -66,18 +69,18 @@ public class TransactionTest {
      * Creates {@link Config#nReplicas} ResourceManagers with Paxos instance connected to TM and all RMs.
      */
     private List<ResourceManager> resourceManagerCluster() {
-        Stream<ResourceManager> rmStream = IntStream.rangeClosed(1, Config.nReplicas).mapToObj(
+        Stream<ResourceManager> rmStream = IntStream.rangeClosed(1, cfg.nReplicas).mapToObj(
                 StupidResourceManager::new
         );
-        if (Config.withDrops) {
+        if (cfg.withDrops) {
             rmStream = rmStream
-                    .map(a -> new DropResourceManager(Config.dropRate, a));
+                    .map(a -> new DropResourceManager(cfg.dropRate, a));
         }
-        if (Config.withTimeout) {
+        if (cfg.withTimeout) {
             rmStream = rmStream
-                    .map(a -> new TimeoutResourceManager(Config.timeoutMilliseconds, a));
+                    .map(a -> new TimeoutResourceManager(cfg.timeoutMilliseconds, a));
         }
-        if (Config.async) {
+        if (cfg.async) {
             rmStream = rmStream
                     .map(a -> new AsyncResourceManager(exec, a));
         }
@@ -86,25 +89,20 @@ public class TransactionTest {
     }
 
 
-    /**
-     * Creates nReplicas * (nReplicas + 1) acceptors and groups them by belonging to Proposer.
-     * Each ResourceManager (nReplicas) has an acceptor on every Replica, including itself. (nReplicas * nReplicas)
-     * TransactionManager also has an acceptor for every ResourceManager. (nReplicas * (nReplicas + 1))
-     */
     public static List<Acceptor<Decision>> acceptors(int serverId, String transactionId) {
-        Stream<Acceptor<Decision>> acceptorStream = IntStream.rangeClosed(0, Config.nReplicas)
-                .limit(Config.nReplicas + 1)
+        Stream<Acceptor<Decision>> acceptorStream = IntStream.rangeClosed(0, cfg.nReplicas)
+                .limit(cfg.nReplicas + 1)
                 .mapToObj(id -> new InMemoryAcceptor<>(new AtomicReference<>(Decision.NONE), id, transactionId));
 
-        if (Config.withDrops) {
+        if (cfg.withDrops) {
             acceptorStream = acceptorStream
-                    .map(a -> new DropAcceptor<>(Config.dropRate, a));
+                    .map(a -> new DropAcceptor<>(cfg.dropRate, a));
         }
-        if (Config.withTimeout) {
+        if (cfg.withTimeout) {
             acceptorStream = acceptorStream
-                    .map(a -> new TimeoutAcceptor<>(Config.timeoutMilliseconds, a));
+                    .map(a -> new TimeoutAcceptor<>(cfg.timeoutMilliseconds, a));
         }
-        if (Config.async) {
+        if (cfg.async) {
             acceptorStream = acceptorStream
                     .map(a -> new AsyncAcceptor<>(exec, a));
         }

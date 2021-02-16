@@ -12,8 +12,8 @@ to produce assembly jar at `./target`.
 
 # How to run
 
-Run it with `java -jar ./target/spaxos-with-dependencies.jar <proposer> <acceptors>`,
-where `proposer` is amount of proposer and `acceptors` amount of acceptors, e.g.:
-`java -jar ./target/spaxos-with-dependencies.jar 5 20`.
-It'll print proposer's logs and result table of values of acceptros. One value should be
-counted for at least quorum (`acceptors/2 + 1`) of acceptors.
+Run it with `java -jar ./target/spaxos-with-dependencies.jar <pathToConfigFile>`,
+where `ConfigFile` is yaml representation of [Config.java](src/main/java/wtf/g4s8/examples/configuration/Config.java)
+If you run it without an argument `java -jar ./target/spaxos-with-dependencies.jar` [default_cfg.yml](src/main/resources/default_cfg.yml) will be used.
+
+It'll print transactions' logs and result table of values of Resource Managers' state machines. 

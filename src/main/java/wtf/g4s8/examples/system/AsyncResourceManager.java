@@ -1,6 +1,5 @@
 package wtf.g4s8.examples.system;
 
-import wtf.g4s8.examples.configuration.TransactionTest;
 import wtf.g4s8.examples.spaxos.Acceptor;
 import wtf.g4s8.examples.system.storage.Storage;
 
@@ -19,8 +18,8 @@ public class AsyncResourceManager implements ResourceManager {
     }
 
     @Override
-    public void update(Patch patch, List<Acceptor<Decision>> acceptors) {
-        this.exec.execute(() -> this.origin.update(patch, acceptors));
+    public void prepare(Patch patch, List<Acceptor<Decision>> acceptors) {
+        this.exec.execute(() -> this.origin.prepare(patch, acceptors));
     }
 
     @Override

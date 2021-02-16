@@ -24,7 +24,6 @@
 
 package wtf.g4s8.examples;
 
-import wtf.g4s8.examples.configuration.Config;
 import wtf.g4s8.examples.spaxos.*;
 
 import java.util.ArrayList;
@@ -49,7 +48,6 @@ public final class Main {
     public static void main(final String... args) throws Exception {
         final int nProp = Integer.parseInt(args[0]);
         final int nAcc = Integer.parseInt(args[1]);
-        Config.paxosProposerTimeOutMilliseconds = 300;
 
         List<AtomicReference<String>> memory = Stream.generate(() -> new AtomicReference<>(""))
                 .limit(nAcc).collect(Collectors.toList());
